@@ -1,0 +1,83 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function myRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && myRole() == 'ADMIN';
+    }
+
+    // Vai trò được phép quản lý danh mục / báo giá (Admin, Quản lý, Điều hành).
+    function canManageMasterData() {
+      return isSignedIn() && myRole() in ['ADMIN', 'QUAN_LY', 'DIEU_HANH'];
+    }
+
+    function isActiveUser() {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'ACTIVE';
+    }
+
+    // ---- users: hồ sơ người dùng ----
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      // Tạo hồ sơ của chính mình khi đăng nhập lần đầu, mặc định vai trò thấp nhất, KHÔNG được tự gán ADMIN.
+      allow create: if isSignedIn() && request.auth.uid == userId
+        && request.resource.data.role in ['STAFF'];
+      // Tự sửa thông tin cá nhân (không đổi role/status); Admin sửa được mọi thứ (đổi role, khóa tài khoản).
+      allow update: if isAdmin() ||
+        (isSignedIn() && request.auth.uid == userId
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.status == resource.data.status);
+      allow delete: if false;
+    }
+
+    // ---- Danh mục dùng chung ----
+    match /customers/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /vendors/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /vehicles/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /drivers/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /locations/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /products/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /price_lists/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    // Mặc định: chặn tất cả các collection chưa được khai báo tường minh ở trên.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

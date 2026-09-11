@@ -2,6 +2,7 @@ import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore
 import { db } from "@/lib/firebase";
 import { normalizeKey, ParseResult } from "@/lib/excel/masterDataParser";
 import {
+  costTypeService,
   customerService,
   driverService,
   locationService,
@@ -21,6 +22,7 @@ export type ImportResult = {
   locations: ImportCounters;
   products: ImportCounters;
   prices: ImportCounters;
+  costTypes: ImportCounters;
   errors: string[];
 };
 
@@ -85,16 +87,25 @@ export async function importMasterData(
   const errors: string[] = [];
 
   onProgress?.("Đang đọc dữ liệu danh mục hiện có...");
-  const [existingCustomers, existingVendors, existingDrivers, existingVehicles, existingLocations, existingProducts, existingPrices] =
-    await Promise.all([
-      customerService.getAll(),
-      vendorService.getAll(),
-      driverService.getAll(),
-      vehicleService.getAll(),
-      locationService.getAll(),
-      productService.getAll(),
-      priceListService.getAll(),
-    ]);
+  const [
+    existingCustomers,
+    existingVendors,
+    existingDrivers,
+    existingVehicles,
+    existingLocations,
+    existingProducts,
+    existingPrices,
+    existingCostTypes,
+  ] = await Promise.all([
+    customerService.getAll(),
+    vendorService.getAll(),
+    driverService.getAll(),
+    vehicleService.getAll(),
+    locationService.getAll(),
+    productService.getAll(),
+    priceListService.getAll(),
+    costTypeService.getAll(),
+  ]);
 
   const customerIdByCode = new Map(existingCustomers.map((c) => [normalizeKey(c.code), c.id]));
   const vendorIdByName = new Map(existingVendors.map((v) => [normalizeKey(v.name), v.id]));
@@ -105,6 +116,7 @@ export async function importMasterData(
   const priceKeys = new Set(
     existingPrices.map((p) => [p.customerId, p.pickupLocationId, p.dropoffLocationId, p.productId].join("|"))
   );
+  const costTypeNameSeen = new Set(existingCostTypes.map((c) => normalizeKey(c.name)));
 
   const result: ImportResult = {
     customers: { created: 0, skipped: 0 },
@@ -114,6 +126,7 @@ export async function importMasterData(
     locations: { created: 0, skipped: 0 },
     products: { created: 0, skipped: 0 },
     prices: { created: 0, skipped: 0 },
+    costTypes: { created: 0, skipped: 0 },
     errors,
   };
 
@@ -263,11 +276,30 @@ export async function importMasterData(
       vendorCost: price.vendorCost,
       driverTripSalary: price.driverTripSalary,
       ticketFee: price.ticketFee,
-      otherFee: price.otherFee,
+      otherFee: 0,
+      fuelNormAmount: price.fuelNormAmount,
       effectiveFrom,
       note: "Import từ Excel ĐẠI PHÁT 1.3",
     });
     result.prices.created++;
+  }
+
+  for (const costType of parsed.costTypes) {
+    const key = normalizeKey(costType.name);
+    if (costTypeNameSeen.has(key)) {
+      result.costTypes.skipped++;
+      continue;
+    }
+    costTypeNameSeen.add(key);
+    writer.prepare("cost_types", {
+      code: costType.code,
+      name: costType.name,
+      isFuel: costType.isFuel,
+      isTripCost: costType.isTripCost,
+      isCashTransaction: costType.isCashTransaction,
+      note: "Import từ Excel ĐẠI PHÁT 1.3",
+    });
+    result.costTypes.created++;
   }
 
   onProgress?.("Đang ghi dữ liệu lên Firestore...");

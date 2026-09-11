@@ -2,9 +2,9 @@ import { Timestamp } from "firebase/firestore";
 
 export type EntityStatus = "ACTIVE" | "INACTIVE";
 
-export interface BaseEntity {
+export interface BaseEntity<TStatus = EntityStatus> {
   id: string;
-  status: EntityStatus;
+  status: TStatus;
   note?: string;
   createdAt?: Timestamp;
   updatedAt?: Timestamp;

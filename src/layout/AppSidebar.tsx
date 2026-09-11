@@ -8,9 +8,12 @@ import { useSidebar } from "../context/SidebarContext";
 import {
   BoxCubeIcon,
   ChevronDownIcon,
+  DocsIcon,
   DollarLineIcon,
   GridIcon,
   HorizontaLDots,
+  TableIcon,
+  TaskIcon,
   UserCircleIcon,
 } from "../icons/index";
 import SidebarWidget from "./SidebarWidget";
@@ -42,12 +45,34 @@ const navItems: NavItem[] = [
       { name: "Tài xế", path: "/danh-muc/tai-xe", resource: "driver" },
       { name: "Điểm nâng / hạ", path: "/danh-muc/diem-nang-ha", resource: "location" },
       { name: "Hàng hóa", path: "/danh-muc/hang-hoa", resource: "product" },
+      { name: "Loại chi phí", path: "/danh-muc/loai-chi-phi", resource: "cost-type" },
     ],
   },
   {
+    name: "Vận tải",
+    icon: <TaskIcon />,
+    subItems: [{ name: "Nhật trình / Chuyến xe", path: "/van-tai/nhat-trinh", resource: "trip" }],
+  },
+  {
     name: "Kinh doanh",
-    icon: <DollarLineIcon />,
+    icon: <TableIcon />,
     subItems: [{ name: "Bảng giá vận chuyển", path: "/kinh-doanh/bang-gia", resource: "price" }],
+  },
+  {
+    name: "Tài chính",
+    icon: <DollarLineIcon />,
+    subItems: [
+      { name: "Thu - Chi", path: "/tai-chinh/thu-chi", resource: "finance" },
+      { name: "Lương tài xế", path: "/tai-chinh/luong-tai-xe", resource: "payroll" },
+    ],
+  },
+  {
+    name: "Công nợ",
+    icon: <DocsIcon />,
+    subItems: [
+      { name: "Công nợ khách hàng", path: "/cong-no/khach-hang", resource: "receivable" },
+      { name: "Công nợ đơn vị vận tải", path: "/cong-no/don-vi-van-tai", resource: "payable" },
+    ],
   },
   {
     name: "Hệ thống",

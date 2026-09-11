@@ -2,6 +2,7 @@
 
 import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RowAction, RowActionsMenu } from "@/components/common/RowActionsMenu";
 import useLoading from "@/components/loading";
 import { Button } from "@/components/ui/button";
@@ -25,7 +26,12 @@ export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldVa
   resolver: Resolver<TForm>;
   defaultValues: TForm;
   toFormValues: (item: T) => TForm;
-  buildCreatePayload: (values: TForm) => Omit<T, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">;
+  /** Có thể trả Promise (vd: sinh mã chứng từ tự động qua getNextSequence trước khi lưu). */
+  buildCreatePayload: (
+    values: TForm
+  ) =>
+    | Omit<T, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">
+    | Promise<Omit<T, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">>;
   buildUpdatePayload: (values: TForm) => Partial<Omit<T, "id" | "createdAt" | "createdBy">>;
   /**
    * Các cột nghiệp vụ của bảng (cột "Chức năng" được thêm tự động).
@@ -38,6 +44,14 @@ export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldVa
   validate?: (values: TForm, mode: "create" | "update", editingId?: string) => Promise<string | null>;
   entityLabel: string;
   dialogClassName?: string;
+  /** Nội dung tùy chọn (vd: thẻ tổng hợp Tổng thu/Tổng chi/Số dư) hiển thị phía trên bảng. */
+  renderExtra?: (data: T[]) => ReactNode;
+  /**
+   * Lọc dữ liệu trước khi hiển thị (vd: bộ lọc khoảng ngày, mục 44.1) — áp dụng cho cả bảng lẫn
+   * renderExtra để số tổng hợp khớp đúng dữ liệu đang lọc. Không set = hiển thị nguyên toàn bộ
+   * (hành vi cũ, không đổi cho các trang chưa dùng prop này).
+   */
+  dataFilter?: (data: T[]) => T[];
 }
 
 export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>({
@@ -53,6 +67,8 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
   validate,
   entityLabel,
   dialogClassName,
+  renderExtra,
+  dataFilter,
 }: EntityListPageProps<T, TForm>) {
   const [data, setData] = useState<T[]>([]);
   const [editing, setEditing] = useState<T | null>(null);
@@ -131,7 +147,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
     const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
     try {
       if (mode === "create") {
-        await service.create(buildCreatePayload(values), user?.id ?? "");
+        await service.create(await buildCreatePayload(values), user?.id ?? "");
         await alert({ title: "Thành công", content: `Thêm ${entityLabel.toLowerCase()} thành công` });
       } else if (editing) {
         await service.update(editing.id, buildUpdatePayload(values), user?.id ?? "");
@@ -189,13 +205,18 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [columns, can]);
 
+  const displayData = dataFilter ? dataFilter(data) : data;
+
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
+      {renderExtra && (
+        <ErrorBoundary label={`tổng hợp ${entityLabel.toLowerCase()}`}>{renderExtra(displayData)}</ErrorBoundary>
+      )}
       <div className="flex flex-1 flex-col h-full overflow-hidden">
         <DataTable
           className="h-full w-full overflow-y-auto border"
           tHeadClass="z-40"
-          data={data ?? []}
+          data={displayData ?? []}
           columns={tableColumns}
           enablePaging
           enableColumnFilter
@@ -221,7 +242,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-                {renderForm(form, mode)}
+                <ErrorBoundary label={`form ${entityLabel.toLowerCase()}`}>{renderForm(form, mode)}</ErrorBoundary>
                 <div className="flex justify-end mt-4 w-full">
                   <Button variant="default" type="submit" className="flex items-center gap-2">
                     Lưu

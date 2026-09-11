@@ -4,6 +4,7 @@ import { DATE_FORMAT } from "@/app/lib/enums";
 import { cn } from "@/app/lib/utils";
 import { Select } from "@/components/ui/select/select";
 import { SelectOption } from "@/components/ui/select/select-list";
+import { Checkbox } from "@/components/ui/checkbox";
 import { FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { InputDatePicker } from "@/components/ui/input-date-picker";
@@ -37,7 +38,8 @@ export function TextFormField<TForm extends FieldValues>({
   className,
   required,
   type = "text",
-}: CommonProps<TForm> & { type?: string }) {
+  disabled,
+}: CommonProps<TForm> & { type?: string; disabled?: boolean }) {
   return (
     <div className={className}>
       <FieldLabel label={label} required={required} />
@@ -50,6 +52,7 @@ export function TextFormField<TForm extends FieldValues>({
               <Input
                 {...field}
                 type={type}
+                disabled={disabled}
                 error={!!fieldState.error}
                 onFocus={(e) => e.target.select()}
                 onChange={(e) =>
@@ -137,6 +140,30 @@ export function DateFormField<TForm extends FieldValues>({
   );
 }
 
+export function CheckboxFormField<TForm extends FieldValues>({
+  control,
+  name,
+  label,
+  className,
+}: CommonProps<TForm>) {
+  return (
+    <div className={cn("flex items-center gap-2 pt-6", className)}>
+      <FormField
+        control={control}
+        name={name}
+        render={({ field }) => (
+          <FormItem className="flex flex-row items-center gap-2 space-y-0">
+            <FormControl>
+              <Checkbox checked={!!field.value} onCheckedChange={field.onChange} />
+            </FormControl>
+            <Label className="whitespace-nowrap">{label}</Label>
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
 export function SelectFormField<TForm extends FieldValues>({
   control,
   name,
@@ -145,7 +172,15 @@ export function SelectFormField<TForm extends FieldValues>({
   required,
   options,
   placeholder,
-}: CommonProps<TForm> & { options: SelectOption[]; placeholder?: string }) {
+  disabled,
+  /** Gọi thêm sau field.onChange — dùng cho side-effect (vd: tự tra bảng giá, tự điền tài xế/vendor). */
+  onValueChange,
+}: CommonProps<TForm> & {
+  options: SelectOption[];
+  placeholder?: string;
+  disabled?: boolean;
+  onValueChange?: (value: string) => void;
+}) {
   return (
     <div className={className}>
       <FieldLabel label={label} required={required} />
@@ -158,8 +193,12 @@ export function SelectFormField<TForm extends FieldValues>({
               <Select
                 options={options}
                 value={field.value ?? ""}
-                onChange={field.onChange}
+                onChange={(value) => {
+                  field.onChange(value);
+                  onValueChange?.(value);
+                }}
                 placeholder={placeholder}
+                disabled={disabled}
                 className={cn("w-full", fieldState.error && "border-destructive")}
               />
             </FormControl>

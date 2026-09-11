@@ -20,6 +20,12 @@ service cloud.firestore {
       return isSignedIn() && myRole() in ['ADMIN', 'QUAN_LY', 'DIEU_HANH'];
     }
 
+    // Vai trò được phép tạo/sửa Thu - Chi (Admin, Quản lý, Kế toán) — đúng resource "finance"
+    // trong src/utils/permissions.ts (Điều hành KHÔNG có quyền tài chính).
+    function canManageFinance() {
+      return isSignedIn() && myRole() in ['ADMIN', 'QUAN_LY', 'KE_TOAN'];
+    }
+
     function isActiveUser() {
       return isSignedIn() &&
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'ACTIVE';
@@ -73,6 +79,38 @@ service cloud.firestore {
     match /price_lists/{id} {
       allow read: if isActiveUser();
       allow write: if canManageMasterData();
+    }
+
+    match /cost_types/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    // Chuyến xe / nhật trình (mục 5 đặc tả nghiệp vụ) — cùng nhóm vai trò được tạo/sửa chuyến
+    // (ADMIN/QUAN_LY/DIEU_HANH) như trong src/utils/permissions.ts.
+    match /trips/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    // Bộ đếm sinh mã chứng từ tuần tự (mục 43), ví dụ TRIP-202609-00001.
+    // Cho phép cả canManageFinance() ghi vì Kế toán cũng cần sinh mã PT-/PC- khi tạo phiếu thu/chi.
+    match /number_sequences/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData() || canManageFinance();
+    }
+
+    // Thu - Chi (mục 18 đặc tả nghiệp vụ).
+    match /finance_transactions/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageFinance();
+    }
+
+    // Lương tài xế theo kỳ (mục 25-27) — cùng nhóm vai trò với Thu - Chi (ADMIN/QUAN_LY/KE_TOAN);
+    // phân biệt CREATE/UPDATE (Kế toán) và LOCK/UNLOCK (Quản lý) ở tầng ứng dụng (src/utils/permissions.ts).
+    match /payroll_periods/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageFinance();
     }
 
     // Mặc định: chặn tất cả các collection chưa được khai báo tường minh ở trên.

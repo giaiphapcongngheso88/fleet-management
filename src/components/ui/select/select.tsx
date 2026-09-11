@@ -105,8 +105,8 @@ export function Select({
                                     (item) => item.value.toString() === value.toString(),
                                 )?.label ||
                                 placeholder ||
-                                "Select item..."
-                                : placeholder || "Select item..."}
+                                "Chọn..."
+                                : placeholder || "Chọn..."}
                         </span>
                         <ChevronDown className="h-3 w-3" />
                     </div>
@@ -114,7 +114,13 @@ export function Select({
             </PopoverTrigger>
             <PopoverContent
                 align="end"
-                className={cn("w-44 p-1.5", classNamePopover)}
+                // Rộng tối thiểu bằng ô chọn (biến CSS Radix cấp sẵn), tự giãn theo nội dung
+                // (giới hạn 24rem) để tên dài (khách hàng, đơn vị vận tải...) không bị cắt — nhưng
+                // không bao giờ vượt quá màn hình (min() lấy giá trị nhỏ hơn giữa 24rem và viewport).
+                className={cn(
+                    "w-max min-w-(--radix-popover-trigger-width) max-w-[min(24rem,calc(100vw-2rem))] p-1.5",
+                    classNamePopover,
+                )}
                 container={container}
             >
                 <SelectList

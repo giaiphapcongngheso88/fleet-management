@@ -23,6 +23,7 @@ const ENTITY_LABELS: { key: keyof ParseResult; label: string }[] = [
   { key: "locations", label: "Điểm nâng / hạ" },
   { key: "products", label: "Hàng hóa" },
   { key: "prices", label: "Bảng giá vận chuyển" },
+  { key: "costTypes", label: "Loại chi phí" },
 ];
 
 export default function ImportMasterDataPage() {
@@ -52,7 +53,7 @@ export default function ImportMasterDataPage() {
       if (total === 0) {
         await alert({
           title: CANH_BAO,
-          content: "Không đọc được dòng dữ liệu nào. Kiểm tra lại file có đúng các sheet: Khách hàng, DS XE, DS KH,Nâng,Hạ.",
+          content: "Không đọc được dòng dữ liệu nào. Kiểm tra lại file có đúng các sheet: Khách hàng, DS XE, DS KH,Nâng,Hạ, Thu - Chi.",
         });
       }
     } catch (err: unknown) {
@@ -121,9 +122,9 @@ export default function ImportMasterDataPage() {
     <div className="flex flex-col gap-4 overflow-y-auto pb-6">
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc 3 sheet: <b>Khách hàng</b>, <b>DS XE</b> (xe / tài xế / ĐV
-          vận tải), <b>DS KH,Nâng,Hạ</b> (điểm nâng hạ / hàng hóa / bảng giá). Dữ liệu sẽ được xem trước, chỉ ghi vào hệ
-          thống khi bạn xác nhận.
+          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc 4 sheet: <b>Khách hàng</b>, <b>DS XE</b> (xe / tài xế / ĐV
+          vận tải), <b>DS KH,Nâng,Hạ</b> (điểm nâng hạ / hàng hóa / bảng giá), <b>Thu - Chi</b> (loại chi phí, lấy theo tên
+          cột). Dữ liệu sẽ được xem trước, chỉ ghi vào hệ thống khi bạn xác nhận.
         </p>
         <div className="flex flex-wrap items-end gap-4">
           <div>

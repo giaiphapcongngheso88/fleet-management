@@ -16,6 +16,8 @@ export interface TransportPrice extends BaseEntity {
   driverTripSalary: number;
   ticketFee: number;
   otherFee: number;
+  /** Định mức tiền dầu tham chiếu theo tuyến (mục 5.5) — dùng để so sánh với dầu thực tế của chuyến. */
+  fuelNormAmount: number;
   /** yyyy-MM-dd */
   effectiveFrom: string;
   /** yyyy-MM-dd, để trống = không giới hạn ngày kết thúc */

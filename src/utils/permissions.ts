@@ -36,6 +36,7 @@ const MASTER_DATA_RESOURCES = [
   "location",
   "product",
   "price",
+  "cost-type",
 ];
 
 const masterDataFull = (): PermissionMap =>

@@ -43,7 +43,16 @@ export type ParsedPrice = {
   vendorCost: number;
   driverTripSalary: number;
   ticketFee: number;
-  otherFee: number;
+  /** Cột "Dầu thực tế" trong sheet DS KH,Nâng,Hạ — định mức dầu tham chiếu theo tuyến (mục 5.5). */
+  fuelNormAmount: number;
+};
+
+export type ParsedCostType = {
+  code: string;
+  name: string;
+  isFuel: boolean;
+  isTripCost: boolean;
+  isCashTransaction: boolean;
 };
 
 export type ParseResult = {
@@ -54,12 +63,49 @@ export type ParseResult = {
   locations: ParsedLocation[];
   products: ParsedProduct[];
   prices: ParsedPrice[];
+  costTypes: ParsedCostType[];
   warnings: string[];
 };
 
 const SHEET_CUSTOMER = "Khách hàng";
 const SHEET_VEHICLE = "DS XE";
 const SHEET_PRICE = "DS KH,Nâng,Hạ";
+const SHEET_FINANCE = "Thu - Chi";
+
+/**
+ * Cột tiêu đề của sheet "Thu - Chi" (mỗi cột = 1 loại chi phí/thu-chi, không phải danh sách dạng
+ * dòng) + vài loại chỉ xuất hiện ở cột chi phí của sheet "Nhật Trình" (mục 8). Không lấy từ vị trí
+ * cột cố định (dễ vỡ khi file thay đổi) — quét toàn bộ ô tiêu đề, tra cờ isFuel/isTripCost/
+ * isCashTransaction theo tên đã chuẩn hóa; loại chưa biết mặc định isTripCost = true.
+ */
+const KNOWN_COST_TYPE_FLAGS: Record<string, { isFuel?: boolean; isTripCost?: boolean; isCashTransaction?: boolean }> = {
+  "vá vỏ": { isTripCost: true },
+  "đổ dầu": { isFuel: true, isTripCost: true },
+  "petrolimex - cửa hàng 72": { isFuel: true, isTripCost: true },
+  "vỏ mới": { isTripCost: true },
+  "mua vỏ": { isTripCost: true },
+  "ứng lương": { isCashTransaction: true },
+  "thanh toán": { isCashTransaction: true },
+  "thanh toán2": { isCashTransaction: true },
+  "thanh toán lương": { isCashTransaction: true },
+  "ứng phí": { isTripCost: true, isCashTransaction: true },
+  "thuê xe hạ hàng": { isTripCost: true },
+  "sữa xe": { isTripCost: true },
+  "sửa xe": { isTripCost: true },
+  "nộp tiền": { isCashTransaction: true },
+  "thai vỏ": { isTripCost: true },
+  "thu tiền": { isCashTransaction: true },
+  "chi phí khác": { isTripCost: true, isCashTransaction: true },
+  "bảo hiểm xe": { isTripCost: true },
+  "đăng kiểm xe": { isTripCost: true },
+  "đổi phí": { isTripCost: true, isCashTransaction: true },
+  "tiền cơm": { isTripCost: true },
+  "bốc hàng": { isTripCost: true },
+  "vé": { isTripCost: true },
+};
+
+/** Tiêu đề không phải tên loại chi phí (cột ngày/đối tượng/ghi chú, hoặc ô trống mặc định của Excel). */
+const NON_COST_TYPE_HEADERS = new Set(["date", "danh sách", "nội dung", ""]);
 
 type CellValue = ExcelJS.CellValue;
 
@@ -123,11 +169,13 @@ export async function parseMasterDataWorkbook(
   const customerSheet = workbook.getWorksheet(SHEET_CUSTOMER);
   const vehicleSheet = workbook.getWorksheet(SHEET_VEHICLE);
   const priceSheet = workbook.getWorksheet(SHEET_PRICE);
+  const financeSheet = workbook.getWorksheet(SHEET_FINANCE);
 
   for (const [name, sheet] of [
     [SHEET_CUSTOMER, customerSheet],
     [SHEET_VEHICLE, vehicleSheet],
     [SHEET_PRICE, priceSheet],
+    [SHEET_FINANCE, financeSheet],
   ] as const) {
     if (!sheet) warnings.push(`Không tìm thấy sheet "${name}" trong file Excel — phần dữ liệu này sẽ bị bỏ qua.`);
   }
@@ -270,7 +318,8 @@ export async function parseMasterDataWorkbook(
         vendorCost: num(row.getCell(10).value),
         driverTripSalary: num(row.getCell(11).value),
         ticketFee: num(row.getCell(12).value),
-        otherFee: num(row.getCell(13).value),
+        // Cột 13 trong sheet gốc là "Dầu thực tế" (định mức tham chiếu), không phải "chi phí khác".
+        fuelNormAmount: num(row.getCell(13).value),
       };
 
       if (Object.values(money).every((amount) => amount === 0)) {
@@ -298,6 +347,39 @@ export async function parseMasterDataWorkbook(
     });
   }
 
+  // ---- Loại chi phí (tiêu đề cột của sheet Thu - Chi, mỗi cột = 1 loại) ----
+  const costTypeMap = new Map<string, ParsedCostType>();
+  if (financeSheet) {
+    const headerRow = financeSheet.getRow(2);
+    for (let c = 1; c <= financeSheet.columnCount; c++) {
+      const rawName = text(headerRow.getCell(c).value);
+      const key = normalizeKey(rawName);
+      if (!rawName || NON_COST_TYPE_HEADERS.has(key) || /^column\d+$/.test(key)) continue;
+      if (costTypeMap.has(key)) continue;
+      const flags = KNOWN_COST_TYPE_FLAGS[key] ?? { isTripCost: true };
+      costTypeMap.set(key, {
+        code: sequentialCode("CP", costTypeMap.size + 1),
+        name: rawName,
+        isFuel: flags.isFuel ?? false,
+        isTripCost: flags.isTripCost ?? false,
+        isCashTransaction: flags.isCashTransaction ?? false,
+      });
+    }
+  }
+  // Loại chi phí chỉ xuất hiện ở cột chi phí của sheet Nhật Trình (mục 8), không có trong Thu - Chi.
+  for (const name of ["Tiền cơm", "Bốc hàng", "Vé"]) {
+    const key = normalizeKey(name);
+    if (costTypeMap.has(key)) continue;
+    const flags = KNOWN_COST_TYPE_FLAGS[key] ?? { isTripCost: true };
+    costTypeMap.set(key, {
+      code: sequentialCode("CP", costTypeMap.size + 1),
+      name,
+      isFuel: flags.isFuel ?? false,
+      isTripCost: flags.isTripCost ?? false,
+      isCashTransaction: flags.isCashTransaction ?? false,
+    });
+  }
+
   return {
     customers,
     vendors: [...vendorMap.values()],
@@ -306,6 +388,7 @@ export async function parseMasterDataWorkbook(
     locations,
     products: [...productMap.values()],
     prices,
+    costTypes: [...costTypeMap.values()],
     warnings,
   };
 }

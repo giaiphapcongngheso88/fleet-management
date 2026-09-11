@@ -26,6 +26,7 @@ const schema = z.object({
   driverTripSalary: z.number().min(0).optional(),
   ticketFee: z.number().min(0).optional(),
   otherFee: z.number().min(0).optional(),
+  fuelNormAmount: z.number().min(0).optional(),
   effectiveFrom: z.string().min(1, "Vui lòng chọn ngày hiệu lực từ"),
   effectiveTo: z.string().optional(),
   note: z.string().optional(),
@@ -47,6 +48,7 @@ const defaultValues: FormValues = {
   driverTripSalary: 0,
   ticketFee: 0,
   otherFee: 0,
+  fuelNormAmount: 0,
   effectiveFrom: today(),
   effectiveTo: "",
   note: "",
@@ -147,6 +149,7 @@ export default function PricingPage() {
         driverTripSalary: item.driverTripSalary ?? 0,
         ticketFee: item.ticketFee ?? 0,
         otherFee: item.otherFee ?? 0,
+        fuelNormAmount: item.fuelNormAmount ?? 0,
         effectiveFrom: item.effectiveFrom,
         effectiveTo: item.effectiveTo ?? "",
         note: item.note ?? "",
@@ -159,6 +162,7 @@ export default function PricingPage() {
         driverTripSalary: v.driverTripSalary ?? 0,
         ticketFee: v.ticketFee ?? 0,
         otherFee: v.otherFee ?? 0,
+        fuelNormAmount: v.fuelNormAmount ?? 0,
         note: v.note ?? "",
         // Chuỗi rỗng = không giới hạn ngày kết thúc (Firestore không nhận undefined).
         effectiveTo: v.effectiveTo ?? "",
@@ -189,6 +193,7 @@ export default function PricingPage() {
           <TextFormField control={form.control} name="driverTripSalary" label="Lương tài xế / chuyến" type="number" />
           <TextFormField control={form.control} name="ticketFee" label="Vé / phụ phí" type="number" />
           <TextFormField control={form.control} name="otherFee" label="Chi phí khác" type="number" />
+          <TextFormField control={form.control} name="fuelNormAmount" label="Định mức tiền dầu tham chiếu" type="number" />
           <DateFormField control={form.control} name="effectiveFrom" label="Hiệu lực từ ngày" clearable={false} required />
           <DateFormField control={form.control} name="effectiveTo" label="Hiệu lực đến ngày (để trống = không giới hạn)" />
         </div>

@@ -541,7 +541,7 @@ const InputDatePicker = forwardRef<InputDatePickerRef, InputDatePickerProps>(
                         </button>
                     </PopoverTrigger>
                     <PopoverContent
-                        className={`w-auto p-0 ${popoverContentClass ?? "z-[9999]"}`}
+                        className={`w-auto max-w-[calc(100vw-2rem)] p-0 ${popoverContentClass ?? "z-[9999]"}`}
                     >
                         <Calendar
                             captionLayout="dropdown"

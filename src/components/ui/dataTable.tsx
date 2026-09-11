@@ -28,6 +28,10 @@ import {
 } from "@tanstack/react-table";
 
 import { cn, normalizeString } from "@/app/lib/utils";
+import { useIsMobile } from "@/hooks/useIsMobile";
+import { STATUS_LABEL } from "@/types/common";
+import { PAYROLL_PERIOD_STATUS_LABEL } from "@/types/payroll";
+import { TRIP_STATUS_LABEL } from "@/types/trip";
 
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -158,6 +162,17 @@ interface DataTableProps<TData, TNestedData, TValue> {
 
 const dateFormats = Object.values(DATE_FORMAT);
 
+/**
+ * Gộp toàn bộ nhãn trạng thái đang dùng trong app (EntityStatus + TripStatus...) để cột "status"
+ * ở bất kỳ trang nào cũng hiển thị đúng nhãn tiếng Việt trong dropdown lọc, không cần khai báo lại
+ * ở từng trang — các bộ enum không trùng khóa (hoặc trùng nghĩa như DRAFT) nên gộp an toàn.
+ */
+const STATUS_FILTER_LABELS: Record<string, string> = {
+    ...STATUS_LABEL,
+    ...TRIP_STATUS_LABEL,
+    ...PAYROLL_PERIOD_STATUS_LABEL,
+};
+
 const getCommonPinningStyles = <TData,>(
     column: Column<TData>,
     backgroundColor?: string,
@@ -219,6 +234,10 @@ export function DataTable<TData, TNestedData, TValue>({
     viewOptionsContentClassName,
 }: DataTableProps<TData, TNestedData, TValue>) {
     const [isMounted, setIsMouned] = useState<boolean>(false);
+    // Mục 48.1 spec nghiệp vụ: dưới breakpoint mobile chuyển bảng -> thẻ, không cài riêng từng
+    // trang. enableGrouping/hasSubRows chưa có card tương ứng (chưa trang nào dùng) nên vẫn giữ bảng.
+    const isMobile = useIsMobile();
+    const showCardView = isMobile && !enableGrouping && !hasSubRows;
     const tableContainerRef = useRef<HTMLDivElement | null>(null);
     const rowScrollToRef = useRef<HTMLTableRowElement | null>(null);
     const indexScrollToPrevRef = useRef<number | undefined>(null);
@@ -612,19 +631,26 @@ export function DataTable<TData, TNestedData, TValue>({
     return (
         <>
             {isLoading && <Spinner />}
-            {enableGlobalFilter && (
-                <div className="relative mb-1 h-lg:mb-2">
-                    <DebouncedInput
-                        type="search"
-                        className="pr-6 h-lg:pr-8 w-full !ring-0 !outline-none"
-                        debounce={250}
-                        onChange={(value) =>
-                            table.setGlobalFilter(String(value).trim().toLocaleLowerCase())
-                        }
-                        value={globalFilter}
-                        placeholder={placeholderSearch}
-                    />
-                    <MagnifyingGlassIcon className="absolute right-1 top-1 h-lg:right-2 h-lg:top-2 h-4 w-4 text-muted-foreground" />
+            {(enableGlobalFilter || (showCardView && enableColumnFilter)) && (
+                <div className="flex items-center gap-2 mb-1 h-lg:mb-2">
+                    {enableGlobalFilter && (
+                        <div className="relative flex-1 min-w-0">
+                            <DebouncedInput
+                                type="search"
+                                className="pr-6 h-lg:pr-8 w-full !ring-0 !outline-none"
+                                debounce={250}
+                                onChange={(value) =>
+                                    table.setGlobalFilter(String(value).trim().toLocaleLowerCase())
+                                }
+                                value={globalFilter}
+                                placeholder={placeholderSearch}
+                            />
+                            <MagnifyingGlassIcon className="absolute right-1 top-1 h-lg:right-2 h-lg:top-2 h-4 w-4 text-muted-foreground" />
+                        </div>
+                    )}
+                    {showCardView && enableColumnFilter && (
+                        <MobileColumnFilters table={table} />
+                    )}
                 </div>
             )}
             <div
@@ -634,6 +660,15 @@ export function DataTable<TData, TNestedData, TValue>({
                 onKeyDown={(e) => handleKeyDown(e)}
                 className={`${className}`}
             >
+                {showCardView ? (
+                    <MobileCardList
+                        table={table}
+                        tableData={tableData}
+                        selectedRow={selectedRow}
+                        onRowClick={handleRowClick}
+                        onRowDoubleClick={onRowDoubleClick}
+                    />
+                ) : (
                 <Table className={tableClassName}>
                     <DeprecatedTableHeader
                         {...(!!tHeadClass && { className: `${tHeadClass}` })}
@@ -981,6 +1016,7 @@ export function DataTable<TData, TNestedData, TValue>({
                             </DeprecatedTableFooter>
                         )}
                 </Table>
+                )}
             </div>
             {enablePaging && (
                 <DataTablePagination
@@ -990,6 +1026,155 @@ export function DataTable<TData, TNestedData, TValue>({
                 />
             )}
         </>
+    );
+}
+
+/**
+ * Danh sách dạng thẻ hiển thị khi màn hình hẹp (mục 48.1 spec) — thay cho <Table>, không cài riêng
+ * từng trang. Nhãn mỗi dòng lấy trực tiếp từ header đã khai báo của cột (flexRender lại) nhưng ẩn
+ * icon sort/nút lọc bên trong (dùng pointer-events-none + ẩn svg) — hiện nguyên trong thẻ sẽ gây rối
+ * vì sắp xếp/lọc theo từng dòng trong thẻ không có ý nghĩa (đã có "Bộ lọc" riêng cho mobile).
+ * Cột "actions" ghim góc trên-phải (thu nhỏ nút cho vừa thẻ), cột "index" (STT) ẩn vì không có ý
+ * nghĩa khi xem dạng thẻ.
+ */
+function MobileCardList<TData>({
+    table,
+    tableData,
+    selectedRow,
+    onRowClick,
+    onRowDoubleClick,
+}: {
+    table: ReactTable<TData>;
+    tableData: Row<TData>[];
+    selectedRow: TData | null;
+    onRowClick: (row: TData, index: number) => void;
+    onRowDoubleClick?: (row: TData, index: number) => void;
+}) {
+    const headers = table.getHeaderGroups()[0]?.headers ?? [];
+
+    if (tableData.length === 0) return null;
+
+    return (
+        <div className="flex flex-col gap-2 p-2">
+            {tableData.map((row, index) => {
+                const cells = row.getVisibleCells();
+                const actionsCell = cells.find((c) => c.column.id === "actions");
+                const fieldCells = cells.filter(
+                    (c) => c.column.id !== "actions" && c.column.id !== "index",
+                );
+                const isSelected = row.original === selectedRow;
+
+                return (
+                    <div
+                        key={row.id}
+                        className={cn(
+                            "rounded-xl border flex flex-col cursor-pointer shadow-xs transition-colors overflow-hidden",
+                            isSelected
+                                ? "bg-amber-100 border-amber-300 hover:bg-amber-100/80"
+                                : "bg-white border-gray-200 hover:bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:hover:bg-white/[0.04]",
+                        )}
+                        onClick={() => onRowClick(row.original, index)}
+                        onDoubleClick={() => onRowDoubleClick?.(row.original, index)}
+                    >
+                        {actionsCell && (
+                            <div
+                                className="flex justify-end border-b border-gray-100 px-2 py-1 dark:border-gray-800 [&_button]:h-6 [&_button]:min-w-6 [&_button]:px-1.5 [&_button]:py-0 [&_button]:text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                            >
+                                {flexRender(
+                                    actionsCell.column.columnDef.cell,
+                                    actionsCell.getContext(),
+                                )}
+                            </div>
+                        )}
+                        <div className="flex flex-col px-3 py-1">
+                            {fieldCells.map((cell) => {
+                                const header = headers.find((h) => h.column.id === cell.column.id);
+                                return (
+                                    <div
+                                        key={cell.id}
+                                        className="flex items-start justify-between gap-3 py-1 leading-tight"
+                                    >
+                                        <span className="pointer-events-none inline-flex items-center gap-0.5 text-[11px] font-bold text-gray-900 shrink-0 [&_svg]:hidden [&_span]:normal-case! [&_button]:text-[11px]! [&_button]:font-bold! dark:text-white">
+                                            {header && !header.isPlaceholder
+                                                ? flexRender(header.column.columnDef.header, header.getContext())
+                                                : cell.column.id}
+                                            <span>:</span>
+                                        </span>
+                                        <span
+                                            className={cn(
+                                                "flex-1 min-w-0 text-[12px] line-clamp-2 text-gray-700 dark:text-gray-200",
+                                                // Nhiều cột tự khai báo sẵn class truncate/whitespace-nowrap (dùng cho
+                                                // bảng desktop, 1 dòng) trên chính nội dung cell — ép ghi đè để chữ
+                                                // được xuống dòng bình thường thì line-clamp-2 ở trên mới có tác dụng.
+                                                "**:whitespace-normal! **:overflow-visible! **:text-clip!",
+                                                // Cột trạng thái (badge) — id này dùng nhất quán ở mọi trang — canh phải
+                                                // đẹp hơn thay vì canh trái như các field văn bản thường.
+                                                cell.column.id === "status" ? "text-right" : "text-left",
+                                            )}
+                                        >
+                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                );
+            })}
+        </div>
+    );
+}
+
+/**
+ * Bộ lọc theo cột dạng popover cho mobile (mục 48.1) — tái dùng nguyên component Filter đã có,
+ * chỉ đổi chỗ hiển thị (từ dưới mỗi tiêu đề cột sang xếp dọc trong 1 popover) để không mất khả năng
+ * lọc khi chuyển sang dạng thẻ.
+ */
+function MobileColumnFilters<TData>({ table }: { table: ReactTable<TData> }) {
+    const [open, setOpen] = useState(false);
+    const headers = (table.getHeaderGroups()[0]?.headers ?? []).filter((h) =>
+        h.column.getCanFilter(),
+    );
+
+    if (headers.length === 0) return null;
+
+    const activeCount = headers.filter((h) => {
+        const v = h.column.getFilterValue();
+        return v !== undefined && v !== "" && v !== null;
+    }).length;
+
+    return (
+        <div className="shrink-0">
+            <Popover open={open} onOpenChange={setOpen}>
+                <PopoverTrigger asChild>
+                    <Button type="button" variant="outline" size="sm" className="flex items-center gap-1.5">
+                        <FilterIcon className="h-3.5 w-3.5" />
+                        Bộ lọc
+                        {activeCount > 0 && (
+                            <span className="ml-1 rounded-full bg-brand-500 px-1.5 text-xs text-white">
+                                {activeCount}
+                            </span>
+                        )}
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent align="end" className="w-72 max-w-[calc(100vw-2rem)] max-h-96 overflow-y-auto flex flex-col gap-3 z-120">
+                    {headers.map((header) => (
+                        <div key={header.id} className="flex flex-col gap-1">
+                            <span className="text-xs font-medium text-gray-500">
+                                {header.isPlaceholder
+                                    ? null
+                                    : flexRender(header.column.columnDef.header, header.getContext())}
+                            </span>
+                            <Filter column={header.column} />
+                        </div>
+                    ))}
+                    <Button type="button" variant="ghost" size="sm" onClick={() => table.resetColumnFilters()}>
+                        Xóa bộ lọc
+                    </Button>
+                </PopoverContent>
+            </Popover>
+        </div>
     );
 }
 
@@ -1061,7 +1246,7 @@ export function DataTableColumnHeaderSort<TData, TValue>({
                                 )}
                         </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-70 p-2 z-120">
+                    <PopoverContent className="w-70 max-w-[calc(100vw-2rem)] p-2 z-120">
                         <div className="max-h-60 overflow-auto">
                             {isFiltering && (
                                 <div
@@ -1108,71 +1293,78 @@ function DataTablePagination<TData>({
     enableToggleColumn,
     viewOptionsContentClassName,
 }: DataTablePaginationProps<TData>) {
+    const isMobile = useIsMobile();
+    const navButtonClass = isMobile ? "h-6 w-6" : undefined;
+    const navIconClass = isMobile ? "h-3 w-3" : "h-4 w-4";
     return (
-        <div className="flex items-center justify-end p-2">
-            <div className="flex items-center space-x-6 lg:space-x-8">
-                <div className="flex items-center space-x-2">
-                    {enableToggleColumn && (
-                        <DataTableViewOptions
-                            table={table}
-                            viewOptionsContentClassName={viewOptionsContentClassName}
-                        />
-                    )}
-                    <p className="text-xs font-medium">Số dòng mỗi trang</p>
-                    <Select
-                        value={`${table.getState().pagination.pageSize}`}
-                        onChange={(value) => {
-                            table.setPageSize(Number(value));
-                        }}
-                        options={[50, 100, 150, 200].map((pageSize) => ({
-                            value: `${pageSize}`,
-                            label: `${pageSize}`,
-                        }))}
-                        showSearch={false}
-                        className="min-w-14"
+        <div className={cn("flex flex-wrap items-center justify-end p-2", isMobile ? "gap-x-2 gap-y-1.5" : "gap-x-6 gap-y-2 lg:gap-x-8")}>
+            <div className={cn("flex flex-wrap items-center", isMobile ? "gap-1.5" : "gap-2")}>
+                {enableToggleColumn && (
+                    <DataTableViewOptions
+                        table={table}
+                        viewOptionsContentClassName={viewOptionsContentClassName}
                     />
-                </div>
-                <div className="flex w-20 items-center justify-center text-xs font-medium">
-                    {`Trang ${table.getState().pagination.pageIndex + 1} trên ${table.getPageCount()}`}
-                </div>
-                <div className="flex items-center space-x-2">
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => table.setPageIndex(0)}
-                        disabled={!table.getCanPreviousPage()}
-                    >
-                        <span className="sr-only">Trang đầu</span>
-                        <DoubleArrowLeftIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => table.previousPage()}
-                        disabled={!table.getCanPreviousPage()}
-                    >
-                        <span className="sr-only">Trang trước</span>
-                        <ChevronLeftIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => table.nextPage()}
-                        disabled={!table.getCanNextPage()}
-                    >
-                        <span className="sr-only">Trang sau</span>
-                        <ChevronRightIcon className="h-4 w-4" />
-                    </Button>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                        disabled={!table.getCanNextPage()}
-                    >
-                        <span className="sr-only">Trang cuối</span>
-                        <DoubleArrowRightIcon className="h-4 w-4" />
-                    </Button>
-                </div>
+                )}
+                {!isMobile && <p className="text-xs font-medium">Số dòng mỗi trang</p>}
+                <Select
+                    value={`${table.getState().pagination.pageSize}`}
+                    onChange={(value) => {
+                        table.setPageSize(Number(value));
+                    }}
+                    options={[50, 100, 150, 200].map((pageSize) => ({
+                        value: `${pageSize}`,
+                        label: `${pageSize}`,
+                    }))}
+                    showSearch={false}
+                    className={isMobile ? "min-w-12" : "min-w-14"}
+                />
+            </div>
+            <div className={cn("flex items-center justify-center text-xs font-medium", !isMobile && "w-20")}>
+                {isMobile
+                    ? `Trang ${table.getState().pagination.pageIndex + 1}/${table.getPageCount()}`
+                    : `Trang ${table.getState().pagination.pageIndex + 1} trên ${table.getPageCount()}`}
+            </div>
+            <div className={cn("flex items-center", isMobile ? "gap-1" : "space-x-2")}>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={navButtonClass}
+                    onClick={() => table.setPageIndex(0)}
+                    disabled={!table.getCanPreviousPage()}
+                >
+                    <span className="sr-only">Trang đầu</span>
+                    <DoubleArrowLeftIcon className={navIconClass} />
+                </Button>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={navButtonClass}
+                    onClick={() => table.previousPage()}
+                    disabled={!table.getCanPreviousPage()}
+                >
+                    <span className="sr-only">Trang trước</span>
+                    <ChevronLeftIcon className={navIconClass} />
+                </Button>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={navButtonClass}
+                    onClick={() => table.nextPage()}
+                    disabled={!table.getCanNextPage()}
+                >
+                    <span className="sr-only">Trang sau</span>
+                    <ChevronRightIcon className={navIconClass} />
+                </Button>
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className={navButtonClass}
+                    onClick={() => table.setPageIndex(table.getPageCount() - 1)}
+                    disabled={!table.getCanNextPage()}
+                >
+                    <span className="sr-only">Trang cuối</span>
+                    <DoubleArrowRightIcon className={navIconClass} />
+                </Button>
             </div>
         </div>
     );
@@ -1187,12 +1379,13 @@ function DataTableViewOptions<TData>({
     table,
     viewOptionsContentClassName,
 }: DataTableViewOptionsProps<TData>) {
+    const isMobile = useIsMobile();
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline">
-                    <MixerHorizontalIcon className="mr-2 h-4 w-4" />
-                    Ẩn/hiện cột
+                <Button variant="outline" size={isMobile ? "icon" : "default"} aria-label="Ẩn/hiện cột">
+                    <MixerHorizontalIcon className={cn("h-4 w-4", !isMobile && "mr-2")} />
+                    {!isMobile && "Ẩn/hiện cột"}
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -1233,6 +1426,28 @@ function DataTableViewOptions<TData>({
 function Filter({ column }: { column: Column<any, unknown> }) {
     const columnFilterValue = column.getFilterValue();
     const { filterVariant } = column.columnDef.meta ?? {};
+
+    // Cột trạng thái (id nhất quán ở mọi trang) hiển thị badge dịch tiếng Việt — lọc bằng text tự
+    // gõ không khớp được với giá trị gốc ("ACTIVE"...). Đổi sang dropdown chọn đúng theo tình trạng
+    // thực có trong dữ liệu, hiện đúng nhãn tiếng Việt.
+    if (column.id === "status") {
+        const rawValues = Array.from(column.getFacetedUniqueValues()?.keys() ?? []) as string[];
+        const options = [
+            { value: "", label: "(Tất cả)" },
+            ...rawValues.map((value) => ({ value, label: STATUS_FILTER_LABELS[value] ?? value })),
+        ];
+        return (
+            <Select
+                options={options}
+                value={(columnFilterValue as string) ?? ""}
+                onChange={(value) => column.setFilterValue(value || undefined)}
+                placeholder="Chọn trạng thái"
+                showSearch={false}
+                className="w-full"
+                classNamePopover="w-auto"
+            />
+        );
+    }
 
     if (
         filterVariant === "range" ||

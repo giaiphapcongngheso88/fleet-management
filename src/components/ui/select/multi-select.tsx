@@ -133,7 +133,7 @@ export function MultiSelect({
             </PopoverTrigger>
             <PopoverContent
                 align="end"
-                className={cn("min-w-44 p-1.5", classNamePopover)}
+                className={cn("min-w-44 max-w-[calc(100vw-2rem)] p-1.5", classNamePopover)}
             >
                 <SelectList
                     onSelect={handleSelect}

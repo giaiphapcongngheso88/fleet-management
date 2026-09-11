@@ -201,7 +201,7 @@ export function VirtualTableSelect<TData, TValue>({
             </PopoverTrigger>
             <PopoverContent
                 align={alignPopover}
-                className={cn("min-w-42 p-1.5", classNamePopover)}
+                className={cn("min-w-42 max-w-[calc(100vw-2rem)] p-1.5", classNamePopover)}
                 tabIndex={0}
                 onKeyDown={handleKeyDown}
             >

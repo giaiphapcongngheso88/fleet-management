@@ -26,13 +26,15 @@ import {
   TripLedgerRow,
 } from "@/services/finance";
 import { exportLedgerToExcel } from "@/lib/excel/ledgerExport";
+import { DebtReconciliationDialog } from "@/components/finance/DebtReconciliationDialog";
 import { Location, Product, Vehicle, Vendor } from "@/types/master-data";
 import { PAYMENT_METHOD_LABEL, PaymentMethod } from "@/types/finance";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { Download, Printer } from "lucide-react";
-import { useMemo, useState } from "react";
+import { Download, Printer, RefreshCw } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { format, parseISO } from "date-fns";
@@ -55,6 +57,7 @@ const paymentSchema = z.object({
 type PaymentFormValues = z.infer<typeof paymentSchema>;
 
 export default function PayablePage() {
+  const searchParams = useSearchParams();
   const { can } = usePermission();
   const { alert } = useFeedbackDialog();
   const { showLoading, hideLoading } = useLoading();
@@ -115,6 +118,15 @@ export default function PayablePage() {
       hideLoading(loadingId);
     }
   };
+
+  const partnerId = searchParams.get("partner") ?? "";
+  useEffect(() => {
+    if (partnerId && vendors.some((vendor) => vendor.id === partnerId) && vendorId !== partnerId) {
+      void loadLedger(partnerId);
+    }
+    // The URL partner is applied once reference data is available.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [partnerId, vendors, vendorId]);
 
   const form = useForm<PaymentFormValues>({
     resolver: zodResolver(paymentSchema),
@@ -331,6 +343,15 @@ export default function PayablePage() {
             <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5 shrink-0">
               <Printer className="h-3.5 w-3.5" /> In
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadLedger(vendorId, asOfDate)}
+              className="flex items-center gap-1.5 shrink-0"
+            >
+              <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Tải lại</span>
+            </Button>
             <Button type="button" variant="outline" size="sm" onClick={onExportExcel} className="flex items-center gap-1.5 shrink-0">
               <Download className="h-3.5 w-3.5" /> Xuất Excel
             </Button>
@@ -367,9 +388,17 @@ export default function PayablePage() {
               <span />
             )}
             {canPay && (
-              <Button variant="default" onClick={() => openPayment(undefined)}>
-                Ghi nhận thanh toán chung
-              </Button>
+              <div className="flex flex-wrap justify-end gap-2">
+                <DebtReconciliationDialog
+                  objectType="VENDOR"
+                  objectId={vendorId}
+                  partnerName={vendorName(vendorId)}
+                  ledger={ledger}
+                />
+                <Button variant="default" onClick={() => openPayment(undefined)}>
+                  Ghi nhận thanh toán chung
+                </Button>
+              </div>
             )}
           </div>
 

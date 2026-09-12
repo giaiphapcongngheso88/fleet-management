@@ -2,19 +2,37 @@ import { collection, getDocs, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { createCrudService } from "@/lib/firestoreCrud";
 import { format, parseISO } from "date-fns";
-import { getNextSequence } from "@/lib/sequence";
+import { getNextSequence, getSequencePrefix } from "@/lib/sequence";
 import { FinanceTransaction, TransactionType } from "@/types/finance";
+import { DebtReconciliation, DebtReconciliationObjectType } from "@/types/debt-reconciliation";
 import { Trip, TripStatus } from "@/types/trip";
 
 // Dữ liệu giao dịch — KHÔNG bật cache (mục 2.4: chỉ cache danh mục/bảng giá).
 export const financeTransactionService = createCrudService<FinanceTransaction>("finance_transactions");
+export const debtReconciliationService = createCrudService<DebtReconciliation>("debt_reconciliations");
+
+export async function getDebtReconciliations(
+  objectType: DebtReconciliationObjectType,
+  objectId: string
+): Promise<DebtReconciliation[]> {
+  const snap = await getDocs(
+    query(
+      collection(db, "debt_reconciliations"),
+      where("objectType", "==", objectType),
+      where("objectId", "==", objectId)
+    )
+  );
+  return snap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as DebtReconciliation)
+    .sort((a, b) => b.reconciliationDate.localeCompare(a.reconciliationDate));
+}
 
 const RECEIVABLE_STATUSES: TripStatus[] = ["COMPLETED", "RECONCILED"];
 
 /** Sinh mã phiếu PT-yyyyMM-00001 / PC-yyyyMM-00001 (mục 43). */
 export async function generateTransactionNo(type: TransactionType, transactionDate: string): Promise<string> {
   const monthKey = format(parseISO(transactionDate), "yyyyMM");
-  const prefix = type === "RECEIPT" ? "PT" : "PC";
+  const prefix = await getSequencePrefix(type === "RECEIPT" ? "receipt" : "payment", type === "RECEIPT" ? "PT" : "PC");
   const seq = await getNextSequence(`${type === "RECEIPT" ? "receipt" : "payment"}-${monthKey}`);
   return `${prefix}-${monthKey}-${String(seq).padStart(5, "0")}`;
 }
@@ -33,6 +51,61 @@ export interface LedgerResult {
   totalRevenue: number;
   totalPaid: number;
   balance: number;
+}
+
+export interface DebtSummaryRow {
+  id: string;
+  objectType: "CUSTOMER" | "VENDOR";
+  objectId: string;
+  partnerName: string;
+  incurred: number;
+  paid: number;
+  balance: number;
+}
+
+export async function computeDebtSummary(asOfDate?: string): Promise<DebtSummaryRow[]> {
+  const [tripsSnap, transactionsSnap] = await Promise.all([
+    getDocs(collection(db, "trips")),
+    getDocs(collection(db, "finance_transactions")),
+  ]);
+  const trips = tripsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Trip)
+    .filter((trip) => RECEIVABLE_STATUSES.includes(trip.status) && (!asOfDate || trip.tripDate <= asOfDate));
+  const transactions = transactionsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as FinanceTransaction)
+    .filter((transaction) => transaction.status === "ACTIVE" && (!asOfDate || transaction.transactionDate <= asOfDate));
+
+  const rows = new Map<string, DebtSummaryRow>();
+  const addRow = (objectType: DebtSummaryRow["objectType"], objectId: string, incurred: number, paid: number) => {
+    const key = `${objectType}:${objectId}`;
+    const current = rows.get(key) ?? {
+      id: key,
+      objectType,
+      objectId,
+      partnerName: objectId,
+      incurred: 0,
+      paid: 0,
+      balance: 0,
+    };
+    current.incurred += incurred;
+    current.paid += paid;
+    current.balance = current.incurred - current.paid;
+    rows.set(key, current);
+  };
+
+  for (const trip of trips) {
+    if (trip.customerId) addRow("CUSTOMER", trip.customerId, trip.revenue ?? 0, 0);
+    if (trip.vendorId) addRow("VENDOR", trip.vendorId, trip.vendorCost ?? 0, 0);
+  }
+  for (const transaction of transactions) {
+    if (transaction.objectType === "CUSTOMER" && transaction.type === "RECEIPT" && transaction.objectId) {
+      addRow("CUSTOMER", transaction.objectId, 0, transaction.amount);
+    }
+    if (transaction.objectType === "VENDOR" && transaction.type === "PAYMENT" && transaction.objectId) {
+      addRow("VENDOR", transaction.objectId, 0, transaction.amount);
+    }
+  }
+  return [...rows.values()];
 }
 
 async function computeLedger(params: {

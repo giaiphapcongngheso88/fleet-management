@@ -1,4 +1,4 @@
-import { doc, runTransaction } from "firebase/firestore";
+import { doc, getDoc, runTransaction } from "firebase/firestore";
 import { db } from "./firebase";
 
 /**
@@ -13,4 +13,10 @@ export async function getNextSequence(key: string): Promise<number> {
     tx.set(ref, { value: next }, { merge: true });
     return next;
   });
+}
+
+export async function getSequencePrefix(kind: "trip" | "receipt" | "payment" | "quote", fallback: string): Promise<string> {
+  const snapshot = await getDoc(doc(db, "sequence_settings", kind));
+  const prefix = snapshot.exists() ? snapshot.data().prefix : undefined;
+  return typeof prefix === "string" && prefix.trim() ? prefix.trim() : fallback;
 }

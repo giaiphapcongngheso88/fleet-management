@@ -18,7 +18,7 @@ import { ImportColumn } from "@/lib/excel/genericImport";
 import { BaseEntity } from "@/types/common";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit, Eye, Upload } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye, RefreshCw, Upload } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { DefaultValues, FieldValues, Resolver, UseFormReturn, useForm } from "react-hook-form";
 
@@ -277,6 +277,17 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
           enableExport
           exportFileName={entityLabel}
           onChange={setData}
+          toolbarActions={
+            <Button
+              variant="outline"
+              onClick={() => void fetchData()}
+              className="shrink-0 flex items-center gap-2"
+              title="Tải lại dữ liệu"
+              aria-label="Tải lại dữ liệu"
+            >
+              <RefreshCw className="h-4 w-4" /> <span className="hidden sm:inline">Tải lại</span>
+            </Button>
+          }
         />
       </div>
       <div className="border-t p-2 flex justify-end gap-2 shrink-0">

@@ -6,6 +6,7 @@ import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeade
 import useLoading from "@/components/loading";
 import { PayrollStatusBadge } from "@/components/payroll/PayrollStatusBadge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ import { usePermission } from "@/context/PermissionContext";
 import { useCompanyInfo } from "@/hooks/useCompanyInfo";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { driverService, locationService } from "@/services/master-data";
+import { financeTransactionService, generateTransactionNo } from "@/services/finance";
 import {
   calculatePayrollPeriodItems,
   computePayrollItemNet,
@@ -29,7 +31,7 @@ import { Driver, Location } from "@/types/master-data";
 import { PayrollItem, PayrollPeriod } from "@/types/payroll";
 import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
-import { Download, Printer } from "lucide-react";
+import { Download, Printer, Trash2, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -56,6 +58,9 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
   // phiếu ("In phiếu" từng dòng vẫn luôn in đúng tài xế đó bất kể tick/bỏ tick ở đây).
   const [excludedFromPrint, setExcludedFromPrint] = useState<Set<string>>(new Set());
   const [expandedDriverIds, setExpandedDriverIds] = useState<Set<string>>(new Set());
+  const [advanceDriverId, setAdvanceDriverId] = useState<string | null>(null);
+  const [advanceAmount, setAdvanceAmount] = useState(0);
+  const [advanceDate, setAdvanceDate] = useState(new Date().toISOString().slice(0, 10));
 
   const toggleExcludedFromPrint = (driverId: string, checked: boolean) => {
     setExcludedFromPrint((prev) => {
@@ -150,8 +155,35 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, drivers]);
 
-  const driverOptions = drivers.map((d) => ({ value: d.id, label: d.name }));
+  const driverOptions = drivers
+    .filter((d) => d.status === "ACTIVE" || selectedDriverIds.includes(d.id))
+    .map((d) => ({ value: d.id, label: d.name }));
   const driverName = (id: string) => drivers.find((d) => d.id === id)?.name ?? id;
+
+  const saveAdvance = async () => {
+    const amount = advanceAmount;
+    if (!advanceDriverId || !amount || amount <= 0) {
+      await alert({ title: "Lỗi", content: "Vui lòng nhập số tiền ứng hợp lệ" });
+      return;
+    }
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      const transactionNo = await generateTransactionNo("PAYMENT", advanceDate);
+      await financeTransactionService.create({
+        transactionNo, transactionDate: advanceDate, type: "PAYMENT", objectType: "DRIVER",
+        objectId: advanceDriverId, amount, paymentMethod: "CASH",
+        description: `Ứng lương trực tiếp - ${driverName(advanceDriverId)}`, status: "ACTIVE",
+      }, user?.id ?? "");
+      await alert({ title: "Thành công", content: `Đã tạo phiếu chi ${transactionNo}` });
+      setAdvanceDriverId(null);
+      setAdvanceAmount(0);
+      await fetchPeriod();
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Tạo ứng lương thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
 
   const isLocked = period?.status === "LOCKED" || period?.status === "PAID";
   const canUpdate = can("payroll", "UPDATE") && !isLocked;
@@ -218,6 +250,28 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
       await alert({ title: "Thành công", content: "Đã lưu điều chỉnh lương." });
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Lưu thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
+
+  const onRemoveDriver = async (driverId: string) => {
+    if (!period || !canUpdate) return;
+    const driver = driverName(driverId);
+    const isConfirm = await confirm({
+      title: "Xóa tài xế khỏi phiếu lương",
+      content: `Xóa ${driver} khỏi kỳ lương này? Các chuyến đã tính của tài xế sẽ không còn thuộc kỳ lương.`,
+    });
+    if (!isConfirm) return;
+    const nextItems = items.filter((item) => item.driverId !== driverId);
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      await payrollPeriodService.update(period.id, { items: nextItems }, user?.id ?? "");
+      setItems(nextItems);
+      setSelectedDriverIds((prev) => prev.filter((id) => id !== driverId));
+      setPeriod({ ...period, items: nextItems });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xóa tài xế khỏi kỳ lương thất bại: " + getErrorMessage(err) });
     } finally {
       hideLoading(loadingId);
     }
@@ -468,11 +522,11 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
         {items.length === 0 && <p className="text-sm text-gray-400">Chưa tính lương — chọn tài xế và bấm &quot;Tính lương&quot; ở trên.</p>}
         <div className="flex flex-col gap-3">
           {items.map((item) => (
-            <div key={item.driverId} className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end border-b pb-3 last:border-b-0">
-              <div className="sm:col-span-2">
+            <div key={item.driverId} className="grid grid-cols-1 sm:grid-cols-6 gap-2 sm:gap-3 items-start border-b pb-2 sm:pb-3 last:border-b-0">
+              <div className="sm:col-span-2 min-w-0">
                 <Label className="whitespace-nowrap">Tài xế</Label>
-                <div className="h-8 flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
+                <div className="min-h-8 flex flex-wrap items-center gap-x-1 gap-y-1">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
                     <Checkbox
                       checked={!excludedFromPrint.has(item.driverId)}
                       onCheckedChange={(checked) => toggleExcludedFromPrint(item.driverId, checked === true)}
@@ -480,24 +534,43 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
                     />
                     <p className="font-medium text-gray-800 dark:text-white/90 truncate">{driverName(item.driverId)}</p>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 flex items-center gap-1"
-                    onClick={() => setPrintingDriverId(item.driverId)}
-                  >
-                    <Printer className="h-3.5 w-3.5" /> In phiếu
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="shrink-0 flex items-center gap-1"
-                    onClick={() => void onExportExcel(item.driverId)}
-                  >
-                    <Download className="h-3.5 w-3.5" /> Excel
-                  </Button>
+                  <div className="flex w-full items-center gap-1 sm:w-auto">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 flex items-center gap-1"
+                      onClick={() => setPrintingDriverId(item.driverId)}
+                    >
+                      <Printer className="h-3.5 w-3.5" /> In phiếu
+                    </Button>
+                    {canUpdate && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="shrink-0 flex items-center gap-1 text-error-600 hover:text-error-700"
+                        onClick={() => void onRemoveDriver(item.driverId)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Xóa
+                      </Button>
+                    )}
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0 flex items-center gap-1"
+                      onClick={() => void onExportExcel(item.driverId)}
+                    >
+                      <Download className="h-3.5 w-3.5" /> Excel
+                    </Button>
+                    {canUpdate && (
+                      <Button type="button" variant="ghost" size="sm" className="shrink-0 flex items-center gap-1"
+                        onClick={() => { setAdvanceDriverId(item.driverId); setAdvanceDate(new Date().toISOString().slice(0, 10)); }}>
+                        <Wallet className="h-3.5 w-3.5" /> Ứng
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <button
                   type="button"
@@ -582,6 +655,20 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
           ))}
         </div>
       </section>
+
+      {advanceDriverId && (
+        <Dialog open={true} onOpenChange={(open) => !open && setAdvanceDriverId(null)}>
+          <DialogContent className="bg-white p-4">
+            <DialogHeader><DialogTitle>Ghi nhận ứng lương</DialogTitle></DialogHeader>
+            <div className="grid gap-3">
+              <p className="text-sm">Tài xế: <strong>{driverName(advanceDriverId)}</strong></p>
+              <div><Label>Ngày chi</Label><Input type="date" value={advanceDate} onChange={(e) => setAdvanceDate(e.target.value)} /></div>
+              <div><Label>Số tiền</Label><CurrencyInput min={1} value={advanceAmount} onChange={setAdvanceAmount} /></div>
+              <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setAdvanceDriverId(null)}>Hủy</Button><Button onClick={() => void saveAdvance()}>Lưu</Button></div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
 
       {showUnlockBox && (
         <section className="rounded-2xl border border-warning-500 bg-warning-50 p-4 dark:bg-warning-500/10">

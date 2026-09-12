@@ -9,6 +9,7 @@ import { DonutChart, MonthlyTrendChart, TopBarChart } from "@/components/reports
 import { KpiCard, KpiCardData } from "@/components/reports/KpiCard";
 import { Button } from "@/components/ui/button";
 import { DataTable } from "@/components/ui/dataTable";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select } from "@/components/ui/select/select";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { financeTransactionService } from "@/services/finance";
@@ -52,6 +53,7 @@ import {
   ArrowUp,
   ArrowUpCircle,
   Download,
+  Filter,
   HandCoins,
   Landmark,
   LayoutGrid,
@@ -296,6 +298,10 @@ export default function ReportPage() {
   const [costDim, setCostDim] = useState<string>("day");
   const [profitDim, setProfitDim] = useState<string>("day");
   const [drillDown, setDrillDown] = useState<{ dimension: TripDimension; row: TripGroupRow } | null>(null);
+  const [customerFilter, setCustomerFilter] = useState("");
+  const [vehicleFilter, setVehicleFilter] = useState("");
+  const [driverFilter, setDriverFilter] = useState("");
+  const [costTypeFilter, setCostTypeFilter] = useState("");
 
   const customers = useReferenceData<Customer>(() => customerService.getAll(), "khách hàng");
   const vehicles = useReferenceData<Vehicle>(() => vehicleService.getAll(), "xe");
@@ -324,12 +330,16 @@ export default function ReportPage() {
 
   useEffect(() => {
     setDrillDown(null);
-  }, [dateRange, revenueDim, costDim, profitDim]);
+  }, [dateRange, revenueDim, costDim, profitDim, customerFilter, vehicleFilter, driverFilter, costTypeFilter]);
 
-  const tripsInRange = useMemo(() => filterTripsInRange(trips, dateRange.from, dateRange.to), [trips, dateRange]);
+  const tripsInRange = useMemo(() => filterTripsInRange(trips, dateRange.from, dateRange.to).filter((trip) =>
+    (!customerFilter || trip.customerId === customerFilter) &&
+    (!vehicleFilter || trip.vehicleId === vehicleFilter) &&
+    (!driverFilter || trip.driverId === driverFilter)
+  ), [trips, dateRange, customerFilter, vehicleFilter, driverFilter]);
   const transactionsInRange = useMemo(
-    () => filterTransactionsInRange(transactions, dateRange.from, dateRange.to),
-    [transactions, dateRange]
+    () => filterTransactionsInRange(transactions, dateRange.from, dateRange.to).filter((transaction) => !costTypeFilter || transaction.costTypeId === costTypeFilter),
+    [transactions, dateRange, costTypeFilter]
   );
 
   const summary = useMemo(
@@ -488,9 +498,35 @@ export default function ReportPage() {
     <div className="flex flex-col flex-1 min-h-0 w-full rounded-2xl border border-gray-200 bg-white px-2 overflow-hidden dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="shrink-0 mb-2 mt-2 flex items-center justify-between gap-2 flex-wrap">
         <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-white/90">Báo cáo</h3>
-        <div className="shrink-0">
-          <DateRangeFilter value={dateRange} onChange={setDateRange} />
+        <div className="hidden md:flex ml-auto items-center gap-2">
+          <div className="shrink-0">
+            <DateRangeFilter value={dateRange} onChange={setDateRange} />
+          </div>
+          <div className="shrink-0 grid grid-cols-4 gap-2">
+            <Select options={[{ value: "", label: "Tất cả khách hàng" }, ...customers.map((x) => ({ value: x.id, label: x.name }))]} value={customerFilter} onChange={setCustomerFilter} showSearch />
+            <Select options={[{ value: "", label: "Tất cả xe" }, ...vehicles.map((x) => ({ value: x.id, label: x.licensePlate }))]} value={vehicleFilter} onChange={setVehicleFilter} showSearch />
+            <Select options={[{ value: "", label: "Tất cả tài xế" }, ...drivers.map((x) => ({ value: x.id, label: x.name }))]} value={driverFilter} onChange={setDriverFilter} showSearch />
+            <Select options={[{ value: "", label: "Tất cả loại thu/chi" }, ...costTypes.map((x) => ({ value: x.id, label: x.name }))]} value={costTypeFilter} onChange={setCostTypeFilter} showSearch />
+          </div>
         </div>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button type="button" variant="outline" size="sm" className="ml-auto flex items-center gap-1.5 md:hidden">
+              <Filter className="h-3.5 w-3.5" />
+              Bộ lọc
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 max-w-[calc(100vw-1rem)] z-120">
+            <div className="flex flex-col gap-3">
+              <p className="text-sm font-semibold text-gray-800 dark:text-white/90">Bộ lọc báo cáo</p>
+              <DateRangeFilter value={dateRange} onChange={setDateRange} inline />
+              <Select options={[{ value: "", label: "Tất cả khách hàng" }, ...customers.map((x) => ({ value: x.id, label: x.name }))]} value={customerFilter} onChange={setCustomerFilter} showSearch />
+              <Select options={[{ value: "", label: "Tất cả xe" }, ...vehicles.map((x) => ({ value: x.id, label: x.licensePlate }))]} value={vehicleFilter} onChange={setVehicleFilter} showSearch />
+              <Select options={[{ value: "", label: "Tất cả tài xế" }, ...drivers.map((x) => ({ value: x.id, label: x.name }))]} value={driverFilter} onChange={setDriverFilter} showSearch />
+              <Select options={[{ value: "", label: "Tất cả loại thu/chi" }, ...costTypes.map((x) => ({ value: x.id, label: x.name }))]} value={costTypeFilter} onChange={setCostTypeFilter} showSearch />
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="shrink-0 mb-2 flex items-center gap-1 flex-wrap">

@@ -31,10 +31,12 @@ export function DateRangeFilter({
   value,
   onChange,
   className,
+  inline = false,
 }: {
   value: DateRange;
   onChange: (range: DateRange) => void;
   className?: string;
+  inline?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -48,6 +50,34 @@ export function DateRangeFilter({
     return d ? format(d, "dd/MM") : s;
   };
 
+  const fields = (
+    <div className={className ?? "flex flex-col gap-2"}>
+      <div className="flex items-center gap-1.5">
+        <Label className="w-8 shrink-0 whitespace-nowrap text-xs">Từ</Label>
+        <InputDatePicker
+          size="sm"
+          clearable={false}
+          value={toDate(value.from)}
+          onChange={(d) => onChange({ ...value, from: toStr(d) })}
+        />
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Label className="w-8 shrink-0 whitespace-nowrap text-xs">Đến</Label>
+        <InputDatePicker
+          size="sm"
+          clearable={false}
+          value={toDate(value.to)}
+          onChange={(d) => onChange({ ...value, to: toStr(d) })}
+        />
+      </div>
+      <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => onChange(getCurrentMonthRange())}>
+        Tháng này
+      </Button>
+    </div>
+  );
+
+  if (inline) return fields;
+
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger asChild>
@@ -60,29 +90,7 @@ export function DateRangeFilter({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56 max-w-[calc(100vw-2rem)] z-120">
-        <div className={className ?? "flex flex-col gap-2"}>
-          <div className="flex items-center gap-1.5">
-            <Label className="w-8 shrink-0 whitespace-nowrap text-xs">Từ</Label>
-            <InputDatePicker
-              size="sm"
-              clearable={false}
-              value={toDate(value.from)}
-              onChange={(d) => onChange({ ...value, from: toStr(d) })}
-            />
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Label className="w-8 shrink-0 whitespace-nowrap text-xs">Đến</Label>
-            <InputDatePicker
-              size="sm"
-              clearable={false}
-              value={toDate(value.to)}
-              onChange={(d) => onChange({ ...value, to: toStr(d) })}
-            />
-          </div>
-          <Button type="button" variant="outline" size="sm" className="w-full" onClick={() => onChange(getCurrentMonthRange())}>
-            Tháng này
-          </Button>
-        </div>
+        {fields}
       </PopoverContent>
     </Popover>
   );

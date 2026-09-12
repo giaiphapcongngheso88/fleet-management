@@ -41,6 +41,8 @@ export const RESOURCE_LABEL: Record<string, string> = {
   location: "Điểm nâng/hạ",
   product: "Hàng hóa",
   "cost-type": "Loại chi phí",
+  unit: "Đơn vị tính",
+  "payment-method": "Phương thức thanh toán",
   price: "Bảng giá vận chuyển",
   trip: "Chuyến xe",
   finance: "Thu - Chi",
@@ -65,6 +67,8 @@ export const PERMISSION_RESOURCES = [
   "location",
   "product",
   "cost-type",
+  "unit",
+  "payment-method",
   "price",
   "trip",
   "finance",
@@ -90,6 +94,8 @@ const MASTER_DATA_RESOURCES = [
   "product",
   "price",
   "cost-type",
+  "unit",
+  "payment-method",
 ];
 
 const masterDataFull = (): PermissionMap =>

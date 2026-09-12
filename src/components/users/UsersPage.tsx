@@ -10,12 +10,12 @@ import { DataTableColumnHeaderSort, DataTable } from "@/components/ui/dataTable"
 import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
 import { useModal } from "@/hooks/useModal";
-import { listUsers, setUserStatus } from "@/services/user";
+import { listUsers, sendUserPasswordReset, setUserStatus } from "@/services/user";
 import { AppUser } from "@/types/user";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ROLE_LABEL } from "@/utils/permissions";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit, Eye } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye, KeyRound } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CreateUserModal from "./CreateUserModal";
 import EditUserModal from "./EditUserModal";
@@ -60,6 +60,19 @@ export default function UsersPage() {
       await fetchData();
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Cập nhật thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
+
+  const onResetPassword = async (item: AppUser) => {
+    if (!(await confirm({ title: "Xác nhận", content: `Gửi email đặt lại mật khẩu cho ${item.email}?` }))) return;
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      await sendUserPasswordReset(item.email);
+      await alert({ title: "Thành công", content: "Đã gửi email đặt lại mật khẩu" });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Gửi email đặt lại mật khẩu thất bại: " + getErrorMessage(err) });
     } finally {
       hideLoading(loadingId);
     }
@@ -148,6 +161,12 @@ export default function UsersPage() {
                     onSelect: () => onToggleStatus(item),
                   }
             );
+            actions.push({
+              key: "reset-password",
+              label: "Đặt lại mật khẩu",
+              icon: <KeyRound className="h-4 w-4 text-gray-500" />,
+              onSelect: () => void onResetPassword(item),
+            });
           }
 
           return <RowActionsMenu ariaLabel="Chức năng người dùng" actions={actions} />;

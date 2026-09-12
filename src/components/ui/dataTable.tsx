@@ -31,6 +31,8 @@ import { cn, normalizeString } from "@/app/lib/utils";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { exportRowsToExcel } from "@/lib/excel/genericExport";
 import { STATUS_LABEL } from "@/types/common";
+import { LOCATION_TYPE_LABEL } from "@/types/master-data";
+import { TRANSACTION_TYPE_LABEL } from "@/types/finance";
 import { PAYROLL_PERIOD_STATUS_LABEL } from "@/types/payroll";
 import { QUOTE_STATUS_LABEL } from "@/types/quote";
 import { TRIP_STATUS_LABEL } from "@/types/trip";
@@ -60,7 +62,7 @@ import {
 } from "@radix-ui/react-icons";
 import { PopoverTrigger } from "@radix-ui/react-popover";
 import { isValid, parse, parseISO } from "date-fns";
-import { Download, FilterIcon, SquareArrowOutUpRight } from "lucide-react";
+import { Download, FilterIcon, SquareArrowOutUpRight, X } from "lucide-react";
 import {
     CSSProperties,
     Fragment,
@@ -69,6 +71,7 @@ import {
     useMemo,
     useRef,
     useState,
+    ReactNode,
 } from "react";
 import { Button } from "./button";
 
@@ -172,6 +175,8 @@ interface DataTableProps<TData, TNestedData, TValue> {
     enableExport?: boolean;
     /** Tên file khi xuất, không gồm đuôi .xlsx (mặc định "du-lieu"). */
     exportFileName?: string;
+    /** Các nút thao tác bổ sung hiển thị cạnh nút Xuất Excel. */
+    toolbarActions?: ReactNode;
 }
 
 const dateFormats = Object.values(DATE_FORMAT);
@@ -186,6 +191,11 @@ const STATUS_FILTER_LABELS: Record<string, string> = {
     ...TRIP_STATUS_LABEL,
     ...PAYROLL_PERIOD_STATUS_LABEL,
     ...QUOTE_STATUS_LABEL,
+};
+
+const TYPE_FILTER_LABELS: Record<string, string> = {
+    ...LOCATION_TYPE_LABEL,
+    ...TRANSACTION_TYPE_LABEL,
 };
 
 const getCommonPinningStyles = <TData,>(
@@ -249,6 +259,7 @@ export function DataTable<TData, TNestedData, TValue>({
     viewOptionsContentClassName,
     enableExport,
     exportFileName,
+    toolbarActions,
 }: DataTableProps<TData, TNestedData, TValue>) {
     const [isMounted, setIsMouned] = useState<boolean>(false);
     // Mục 48.1 spec nghiệp vụ: dưới breakpoint mobile chuyển bảng -> thẻ, không cài riêng từng
@@ -366,7 +377,9 @@ export function DataTable<TData, TNestedData, TValue>({
     const resolvedColumns = useMemo(
         () =>
             columns.map((col) =>
-                col.id === "status" && !col.filterFn ? { ...col, filterFn: "equals" as const } : col,
+                (col.id === "status" || col.id === "type") && !col.filterFn
+                    ? { ...col, filterFn: "equals" as const }
+                    : col,
             ),
         [columns],
     );
@@ -734,6 +747,7 @@ export function DataTable<TData, TNestedData, TValue>({
                     {showCardView && enableColumnFilter && (
                         <MobileColumnFilters table={table} />
                     )}
+                    {toolbarActions}
                     {enableExport && (
                         <Button
                             type="button"
@@ -771,7 +785,6 @@ export function DataTable<TData, TNestedData, TValue>({
                         {table.getHeaderGroups().map((headerGroup) => (
                             <DeprecatedTableRow
                                 key={headerGroup.id}
-                                style={{ height: "1px" }}
                             >
                                 {hasSubRows && (
                                     <DeprecatedTableHead
@@ -789,9 +802,8 @@ export function DataTable<TData, TNestedData, TValue>({
                                                             header.column,
                                                             "#39568f",
                                                         ),
-                                                        height: "inherit",
                                                     }
-                                                    : { height: "inherit" }
+                                                    : undefined
                                             }
                                         >
                                             <div className="flex flex-col h-full justify-between">
@@ -1245,7 +1257,7 @@ function MobileColumnFilters<TData>({ table }: { table: ReactTable<TData> }) {
                 <PopoverTrigger asChild>
                     <Button type="button" variant="outline" size="sm" className="flex items-center gap-1.5">
                         <FilterIcon className="h-3.5 w-3.5" />
-                        Bộ lọc
+                        <span className="hidden sm:inline">Bộ lọc</span>
                         {activeCount > 0 && (
                             <span className="ml-1 rounded-full bg-brand-500 px-1.5 text-xs text-white">
                                 {activeCount}
@@ -1264,8 +1276,17 @@ function MobileColumnFilters<TData>({ table }: { table: ReactTable<TData> }) {
                             <Filter column={header.column} />
                         </div>
                     ))}
-                    <Button type="button" variant="ghost" size="sm" onClick={() => table.resetColumnFilters()}>
-                        Xóa bộ lọc
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => table.resetColumnFilters()}
+                        className="sm:w-auto"
+                        title="Xóa bộ lọc"
+                        aria-label="Xóa bộ lọc"
+                    >
+                        <X className="h-3.5 w-3.5 sm:hidden" />
+                        <span className="hidden sm:inline">Xóa bộ lọc</span>
                     </Button>
                 </PopoverContent>
             </Popover>
@@ -1537,6 +1558,25 @@ function Filter({ column }: { column: Column<any, unknown> }) {
                 value={(columnFilterValue as string) ?? ""}
                 onChange={(value) => column.setFilterValue(value || undefined)}
                 placeholder="Chọn trạng thái"
+                showSearch={false}
+                className="w-full"
+                classNamePopover="w-auto"
+            />
+        );
+    }
+
+    if (column.id === "type") {
+        const rawValues = Array.from(column.getFacetedUniqueValues()?.keys() ?? []) as string[];
+        const options = [
+            { value: "", label: "(Tất cả)" },
+            ...rawValues.map((value) => ({ value, label: TYPE_FILTER_LABELS[value] ?? value })),
+        ];
+        return (
+            <Select
+                options={options}
+                value={(columnFilterValue as string) ?? ""}
+                onChange={(value) => column.setFilterValue(value || undefined)}
+                placeholder="Chọn loại"
                 showSearch={false}
                 className="w-full"
                 classNamePopover="w-auto"

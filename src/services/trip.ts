@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { createCrudService } from "@/lib/firestoreCrud";
-import { getNextSequence } from "@/lib/sequence";
+import { getNextSequence, getSequencePrefix } from "@/lib/sequence";
 import { Trip, TripCost, TripItem } from "@/types/trip";
 
 export const tripService = createCrudService<Trip>("trips");
@@ -8,8 +8,8 @@ export const tripService = createCrudService<Trip>("trips");
 /** Sinh mã chuyến TRIP-yyyyMM-00001 (mục 43), số chạy theo từng tháng. */
 export async function generateTripCode(tripDate: string): Promise<string> {
   const monthKey = format(parseISO(tripDate), "yyyyMM");
-  const seq = await getNextSequence(`trip-${monthKey}`);
-  return `TRIP-${monthKey}-${String(seq).padStart(5, "0")}`;
+  const [seq, prefix] = await Promise.all([getNextSequence(`trip-${monthKey}`), getSequencePrefix("trip", "TRIP")]);
+  return `${prefix}-${monthKey}-${String(seq).padStart(5, "0")}`;
 }
 
 export interface TripTotals {

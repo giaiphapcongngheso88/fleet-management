@@ -86,6 +86,16 @@ service cloud.firestore {
       allow write: if canManageMasterData();
     }
 
+    match /units_of_measure/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    match /payment_methods/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
     // Chuyến xe / nhật trình (mục 5 đặc tả nghiệp vụ) — cùng nhóm vai trò được tạo/sửa chuyến
     // (ADMIN/QUAN_LY/DIEU_HANH) như trong src/utils/permissions.ts.
     match /trips/{id} {
@@ -100,6 +110,12 @@ service cloud.firestore {
       allow write: if canManageMasterData() || canManageFinance();
     }
 
+    // Cấu hình tiền tố và số bắt đầu cho mã chứng từ.
+    match /sequence_settings/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
     // Thu - Chi (mục 18 đặc tả nghiệp vụ).
     match /finance_transactions/{id} {
       allow read: if isActiveUser();
@@ -109,6 +125,12 @@ service cloud.firestore {
     // Lương tài xế theo kỳ (mục 25-27) — cùng nhóm vai trò với Thu - Chi (ADMIN/QUAN_LY/KE_TOAN);
     // phân biệt CREATE/UPDATE (Kế toán) và LOCK/UNLOCK (Quản lý) ở tầng ứng dụng (src/utils/permissions.ts).
     match /payroll_periods/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageFinance();
+    }
+
+    // Biên bản đối chiếu công nợ — dữ liệu tài chính, cùng quyền với Thu - Chi.
+    match /debt_reconciliations/{id} {
       allow read: if isActiveUser();
       allow write: if canManageFinance();
     }

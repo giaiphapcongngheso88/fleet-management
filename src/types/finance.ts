@@ -37,6 +37,8 @@ export interface FinanceTransaction extends BaseEntity {
   objectId?: string;
   /** Gắn với 1 chuyến cụ thể nếu phiếu này dùng để thanh toán công nợ đúng chuyến đó (mục 18.2/18.3). */
   tripId?: string;
+  /** Khóa nguồn ổn định cho dữ liệu import từ Excel, dùng để chống tạo trùng khi upload lại. */
+  sourceKey?: string;
   amount: number;
   paymentMethod: PaymentMethod;
   description?: string;

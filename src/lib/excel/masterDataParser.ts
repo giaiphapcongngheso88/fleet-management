@@ -61,6 +61,32 @@ export type ParsedFinanceTransaction = {
   costTypeName: string;
   amount: number;
   description: string;
+  vehiclePlate?: string;
+};
+
+export type ParsedTrip = {
+  tripCode: string;
+  tripDate: string;
+  vehiclePlate: string;
+  customerName: string;
+  vendorName: string;
+  driverName: string;
+  lot: string;
+  pickupName: string;
+  dropoffName: string;
+  productName: string;
+  quantity: number;
+  unitPrice: number;
+  items: { productName: string; quantity: number; unitPrice: number }[];
+  dropFee: number;
+  driverTripSalary: number;
+  vendorCost: number;
+  revenue: number;
+  cost: number;
+  profit: number;
+  status: string;
+  note: string;
+  costs: { costTypeName: string; amount: number }[];
 };
 
 export type ParseResult = {
@@ -73,6 +99,7 @@ export type ParseResult = {
   prices: ParsedPrice[];
   costTypes: ParsedCostType[];
   financeTransactions: ParsedFinanceTransaction[];
+  trips: ParsedTrip[];
   warnings: string[];
 };
 
@@ -80,6 +107,9 @@ const SHEET_CUSTOMER = "Khách hàng";
 const SHEET_VEHICLE = "DS XE";
 const SHEET_PRICE = "DS KH,Nâng,Hạ";
 const SHEET_FINANCE = "Thu - Chi";
+const SHEET_LEDGER = "Sổ thu chi";
+const SHEET_TRIPS = "Nhật trình (2)";
+const SHEET_VEHICLE_INDEX = "Bảng tổng hợp";
 
 /**
  * Cột tiêu đề của sheet "Thu - Chi" (mỗi cột = 1 loại chi phí/thu-chi, không phải danh sách dạng
@@ -148,8 +178,9 @@ function num(value: CellValue): number {
 }
 
 /** Chuẩn hóa để so trùng: bỏ dấu cách thừa + không phân biệt hoa/thường. */
-export function normalizeKey(value: string): string {
-  return value.trim().replace(/\s+/g, " ").toLowerCase();
+export function normalizeKey(value: unknown): string {
+  if (value == null) return "";
+  return String(value).trim().replace(/\s+/g, " ").toLowerCase();
 }
 
 function sequentialCode(prefix: string, index: number): string {
@@ -185,12 +216,17 @@ export async function parseMasterDataWorkbook(
   const vehicleSheet = workbook.getWorksheet(SHEET_VEHICLE);
   const priceSheet = workbook.getWorksheet(SHEET_PRICE);
   const financeSheet = workbook.getWorksheet(SHEET_FINANCE);
+  const ledgerSheet = workbook.getWorksheet(SHEET_LEDGER);
+  const tripSheet = workbook.getWorksheet(SHEET_TRIPS);
+  const vehicleIndexSheet = workbook.getWorksheet(SHEET_VEHICLE_INDEX);
 
   for (const [name, sheet] of [
     [SHEET_CUSTOMER, customerSheet],
     [SHEET_VEHICLE, vehicleSheet],
     [SHEET_PRICE, priceSheet],
     [SHEET_FINANCE, financeSheet],
+    [SHEET_LEDGER, ledgerSheet],
+    [SHEET_TRIPS, tripSheet],
   ] as const) {
     if (!sheet) warnings.push(`Không tìm thấy sheet "${name}" trong file Excel — phần dữ liệu này sẽ bị bỏ qua.`);
   }
@@ -365,6 +401,21 @@ export async function parseMasterDataWorkbook(
   // ---- Loại chi phí (tiêu đề cột của sheet Thu - Chi, mỗi cột = 1 loại) ----
   const costTypeMap = new Map<string, ParsedCostType>();
   const financeTransactions: ParsedFinanceTransaction[] = [];
+  const trips: ParsedTrip[] = [];
+  const vehicleIndex = new Map<number, string>();
+  if (vehicleSheet) {
+    for (let r = 2; r <= vehicleSheet.rowCount; r++) {
+      const id = num(vehicleSheet.getRow(r).getCell(9).value);
+      const plate = text(vehicleSheet.getRow(r).getCell(2).value);
+      if (id && plate) vehicleIndex.set(id, plate);
+    }
+  }
+  if (vehicleIndexSheet && vehicleIndex.size === 0) {
+    for (let r = 2; r <= vehicleIndexSheet.rowCount; r++) {
+      const plate = text(vehicleIndexSheet.getRow(r).getCell(2).value);
+      if (plate) vehicleIndex.set(r, plate);
+    }
+  }
   if (financeSheet) {
     const headerRow = financeSheet.getRow(2);
     const costHeaders = new Map<number, string>();
@@ -386,7 +437,7 @@ export async function parseMasterDataWorkbook(
 
     // Mẫu 1.3 lưu phát sinh theo ma trận: cột ngày, đối tượng/diễn giải,
     // các cột còn lại là từng loại thu/chi. Mỗi ô số là một phiếu riêng.
-    for (let r = 3; r <= financeSheet.rowCount; r++) {
+    for (let r = 3; r <= financeSheet.rowCount && !ledgerSheet; r++) {
       const row = financeSheet.getRow(r);
       const transactionDate = text(row.getCell(1).value);
       if (!transactionDate) continue;
@@ -399,6 +450,81 @@ export async function parseMasterDataWorkbook(
           key.includes("thu tiền") || key.includes("thu ") || key === "nộp tiền" ? "RECEIPT" : "PAYMENT";
         financeTransactions.push({ transactionDate, type, costTypeName, amount, description });
       }
+    }
+  }
+
+  if (ledgerSheet) {
+    for (let r = 2; r <= ledgerSheet.rowCount; r++) {
+      const row = ledgerSheet.getRow(r);
+      const transactionDate = text(row.getCell(2).value);
+      const amount = num(row.getCell(4).value);
+      const costTypeName = text(row.getCell(5).value);
+      if (!transactionDate || !amount || !costTypeName) continue;
+      const objectValue = row.getCell(3).value;
+      const objectNumber = typeof objectValue === "number" ? objectValue : Number(text(objectValue));
+      financeTransactions.push({
+        transactionDate,
+        type: normalizeKey(costTypeName).includes("thu tiền") ? "RECEIPT" : "PAYMENT",
+        costTypeName,
+        amount,
+        description: text(row.getCell(6).value),
+        vehiclePlate: vehicleIndex.get(objectNumber),
+      });
+    }
+  }
+
+  if (tripSheet) {
+    for (let r = 2; r <= tripSheet.rowCount; r++) {
+      const row = tripSheet.getRow(r);
+      const tripDate = text(row.getCell(1).value);
+      const tripCode = text(row.getCell(4).value);
+      const rawPlate = row.getCell(2).value;
+      const vehiclePlate = typeof rawPlate === "number" ? vehicleIndex.get(rawPlate) ?? "" : text(rawPlate);
+      const customerName = text(row.getCell(3).value);
+      const pickupName = text(row.getCell(8).value);
+      const dropoffName = text(row.getCell(9).value);
+      if (!tripDate || !tripCode || (!vehiclePlate && !customerName)) continue;
+      const costs: { costTypeName: string; amount: number }[] = [
+        { costTypeName: "Tiền cơm", amount: num(row.getCell(28).value) },
+        { costTypeName: "Bốc hàng", amount: num(row.getCell(29).value) },
+        { costTypeName: "Vé", amount: num(row.getCell(30).value) },
+        { costTypeName: "Vá vỏ", amount: num(row.getCell(31).value) },
+        { costTypeName: "Đổ dầu", amount: num(row.getCell(32).value) },
+        { costTypeName: "Chi phí khác", amount: num(row.getCell(33).value) },
+      ]
+        .filter((cost) => cost.amount !== 0)
+        .map((cost) => cost);
+      const items = [];
+      for (let item = 0; item < 5; item++) {
+        const productName = splitProductKey(text(row.getCell(11 + item * 3).value)).name;
+        const quantity = num(row.getCell(12 + item * 3).value);
+        const unitPrice = num(row.getCell(13 + item * 3).value);
+        if (productName && (quantity || unitPrice)) items.push({ productName, quantity, unitPrice });
+      }
+      trips.push({
+        tripCode,
+        tripDate,
+        vehiclePlate,
+        customerName,
+        vendorName: text(row.getCell(34).value),
+        driverName: text(row.getCell(5).value),
+        lot: text(row.getCell(7).value),
+        pickupName,
+        dropoffName,
+        productName: items[0]?.productName ?? "",
+        quantity: items[0]?.quantity ?? 0,
+        unitPrice: items[0]?.unitPrice ?? 0,
+        dropFee: num(row.getCell(26).value),
+        driverTripSalary: num(row.getCell(27).value),
+        vendorCost: num(row.getCell(35).value),
+        revenue: num(row.getCell(36).value),
+        cost: num(row.getCell(37).value),
+        profit: num(row.getCell(36).value) - num(row.getCell(37).value),
+        status: text(row.getCell(40).value),
+        note: text(row.getCell(39).value),
+        items,
+        costs,
+      });
     }
   }
   // Loại chi phí chỉ xuất hiện ở cột chi phí của sheet Nhật Trình (mục 8), không có trong Thu - Chi.
@@ -425,6 +551,7 @@ export async function parseMasterDataWorkbook(
     prices,
     costTypes: [...costTypeMap.values()],
     financeTransactions,
+    trips,
     warnings,
   };
 }

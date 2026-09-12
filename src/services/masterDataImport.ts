@@ -1,6 +1,8 @@
 import { collection, doc, serverTimestamp, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { normalizeKey, ParseResult } from "@/lib/excel/masterDataParser";
+import { financeTransactionService } from "./finance";
+import { tripService } from "./trip";
 import {
   costTypeService,
   customerService,
@@ -24,6 +26,7 @@ export type ImportResult = {
   prices: ImportCounters;
   costTypes: ImportCounters;
   financeTransactions: ImportCounters;
+  trips: ImportCounters;
   errors: string[];
 };
 
@@ -36,6 +39,29 @@ const BATCH_LIMIT = 10;
 
 type PendingWrite = { collectionName: string; id: string; data: Record<string, unknown> };
 
+function financeImportKey(transaction: {
+  transactionDate?: unknown;
+  type?: unknown;
+  costTypeName?: unknown;
+  amount?: unknown;
+  description?: unknown;
+  vehiclePlate?: string;
+}): string {
+  const asText = (value: unknown) => (value == null ? "" : String(value).trim());
+  return [
+    asText(transaction.transactionDate),
+    asText(transaction.type),
+    normalizeKey(asText(transaction.costTypeName)),
+    asText(transaction.amount),
+    normalizeKey(asText(transaction.description)),
+    normalizeKey(asText(transaction.vehiclePlate)),
+  ].join("|");
+}
+
+function financeSourceKey(key: string): string {
+  return `EXCEL:${key}`;
+}
+
 /**
  * Ghi dữ liệu theo lô (batch) để import nhanh và không bị treo giữa đường.
  * ID được sinh trước ở client nên có thể liên kết khóa ngoại (xe → tài xế, bảng giá → điểm/hàng hóa)
@@ -46,14 +72,14 @@ class BatchWriter {
 
   constructor(private readonly userId: string, private readonly onProgress?: (message: string) => void) {}
 
-  prepare(collectionName: string, data: Record<string, unknown>): string {
-    const ref = doc(collection(db, collectionName));
+  prepare(collectionName: string, data: Record<string, unknown>, existingId?: string): string {
+    const ref = existingId ? doc(db, collectionName, existingId) : doc(collection(db, collectionName));
     this.pending.push({
       collectionName,
       id: ref.id,
       data: {
         ...data,
-        status: "ACTIVE",
+        status: data.status ?? "ACTIVE",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
         createdBy: this.userId,
@@ -97,6 +123,7 @@ export async function importMasterData(
     existingProducts,
     existingPrices,
     existingCostTypes,
+    existingFinanceTransactions,
   ] = await Promise.all([
     customerService.getAll(),
     vendorService.getAll(),
@@ -106,9 +133,11 @@ export async function importMasterData(
     productService.getAll(),
     priceListService.getAll(),
     costTypeService.getAll(),
+    financeTransactionService.getAll(),
   ]);
 
   const customerIdByCode = new Map(existingCustomers.map((c) => [normalizeKey(c.code), c.id]));
+  const customerIdByName = new Map(existingCustomers.map((c) => [normalizeKey(c.name), c.id]));
   const vendorIdByName = new Map(existingVendors.map((v) => [normalizeKey(v.name), v.id]));
   const driverIdByName = new Map(existingDrivers.map((d) => [normalizeKey(d.name), d.id]));
   const vehicleIdByPlate = new Map(existingVehicles.map((v) => [normalizeKey(v.licensePlate), v.id]));
@@ -119,6 +148,24 @@ export async function importMasterData(
   );
   const costTypeIdByName = new Map(existingCostTypes.map((c) => [normalizeKey(c.name), c.id]));
   const costTypeNameSeen = new Set(existingCostTypes.map((c) => normalizeKey(c.name)));
+  const financeImportKeys = new Set(
+    existingFinanceTransactions.map((transaction) => {
+      const sourceKey = typeof transaction.sourceKey === "string" ? transaction.sourceKey : "";
+      if (sourceKey.startsWith("EXCEL:")) return sourceKey.slice("EXCEL:".length);
+      const costTypeName = existingCostTypes.find((costType) => costType.id === transaction.costTypeId)?.name ?? "";
+      return financeImportKey({
+        transactionDate: transaction.transactionDate,
+        type: transaction.type,
+        costTypeName,
+        amount: transaction.amount,
+        description:
+          typeof transaction.description === "string" && transaction.description.startsWith(`${costTypeName}: `)
+            ? transaction.description.slice(costTypeName.length + 2)
+            : transaction.description ?? "",
+        vehiclePlate: existingVehicles.find((vehicle) => vehicle.id === transaction.objectId)?.licensePlate,
+      });
+    })
+  );
 
   const result: ImportResult = {
     customers: { created: 0, skipped: 0 },
@@ -130,6 +177,7 @@ export async function importMasterData(
     prices: { created: 0, skipped: 0 },
     costTypes: { created: 0, skipped: 0 },
     financeTransactions: { created: 0, skipped: 0 },
+    trips: { created: 0, skipped: 0 },
     errors,
   };
 
@@ -151,6 +199,7 @@ export async function importMasterData(
       note: "",
     });
     customerIdByCode.set(key, id);
+    customerIdByName.set(normalizeKey(customer.name), id);
     result.customers.created++;
   }
 
@@ -241,6 +290,42 @@ export async function importMasterData(
     result.vehicles.created++;
   }
 
+  const ensureCustomer = (name: string): string => {
+    const key = normalizeKey(name);
+    if (!key) return "";
+    const existing = customerIdByName.get(key) ?? customerIdByCode.get(key);
+    if (existing) return existing;
+    const id = writer.prepare("customers", {
+      code: `IMPORT-${String(customerIdByName.size + 1).padStart(4, "0")}`,
+      name,
+      taxCode: "",
+      address: "",
+      phone: "",
+      type: "Khách hàng",
+      note: "Tự tạo từ Nhật trình khi import Excel",
+    });
+    customerIdByName.set(key, id);
+    result.customers.created++;
+    return id;
+  };
+
+  const ensureLocation = (name: string): string => {
+    const key = normalizeKey(name);
+    if (!key) return "";
+    const existing = locationIdByName.get(key);
+    if (existing) return existing;
+    const id = writer.prepare("locations", {
+      code: `IMPORT-${String(locationIdByName.size + 1).padStart(4, "0")}`,
+      name,
+      type: "BOTH",
+      address: "",
+      note: "Tự tạo từ Nhật trình khi import Excel",
+    });
+    locationIdByName.set(key, id);
+    result.locations.created++;
+    return id;
+  };
+
   for (const price of parsed.prices) {
     const customerId = customerIdByCode.get(normalizeKey(price.customerCode));
     const pickupLocationId = locationIdByName.get(normalizeKey(price.pickupName));
@@ -307,14 +392,21 @@ export async function importMasterData(
   }
 
   for (const transaction of parsed.financeTransactions) {
+    const importKey = financeImportKey(transaction);
+    if (financeImportKeys.has(importKey)) {
+      result.financeTransactions.skipped++;
+      continue;
+    }
+    financeImportKeys.add(importKey);
     const costTypeId = costTypeIdByName.get(normalizeKey(transaction.costTypeName));
     writer.prepare("finance_transactions", {
       transactionNo: `IMP-${transaction.transactionDate.replace(/[^0-9]/g, "")}-${result.financeTransactions.created + 1}`,
+      sourceKey: financeSourceKey(importKey),
       transactionDate: transaction.transactionDate,
       type: transaction.type,
       costTypeId: costTypeId ?? "",
       objectType: "OTHER",
-      objectId: "",
+      objectId: transaction.vehiclePlate ? vehicleIdByPlate.get(normalizeKey(transaction.vehiclePlate)) ?? "" : "",
       amount: transaction.amount,
       paymentMethod: "OTHER",
       description: transaction.description
@@ -322,6 +414,93 @@ export async function importMasterData(
         : transaction.costTypeName,
     });
     result.financeTransactions.created++;
+  }
+
+  const existingTrips = await tripService.getAll();
+  const tripsByCode = new Map(existingTrips.map((trip) => [normalizeKey(trip.tripCode), trip]));
+  const tripCodes = new Set(tripsByCode.keys());
+  for (const trip of parsed.trips) {
+    const tripKey = normalizeKey(trip.tripCode);
+    if (tripCodes.has(tripKey)) {
+      const existingTrip = tripsByCode.get(tripKey);
+      if (existingTrip && String(existingTrip.status) === "ACTIVE") {
+        writer.prepare(
+          "trips",
+          {
+            status: normalizeKey(trip.status).includes("hoàn thành") ? "COMPLETED" : "DRAFT",
+            vendorId:
+              existingTrip.vendorId ||
+              vendorIdByName.get(normalizeKey(trip.vendorName)) ||
+              vendorIdByName.get(
+                normalizeKey(
+                  parsed.vehicles.find(
+                    (vehicle) => normalizeKey(vehicle.licensePlate) === normalizeKey(trip.vehiclePlate)
+                  )?.vendorName ?? ""
+                )
+              ) ||
+              "",
+          },
+          existingTrip.id
+        );
+      }
+      result.trips.skipped++;
+      continue;
+    }
+    const vehicleId = vehicleIdByPlate.get(normalizeKey(trip.vehiclePlate)) ?? "";
+    const sourceVehicle = parsed.vehicles.find(
+      (vehicle) => normalizeKey(vehicle.licensePlate) === normalizeKey(trip.vehiclePlate)
+    );
+    const customerId = ensureCustomer(trip.customerName);
+    const pickupLocationId = ensureLocation(trip.pickupName);
+    const dropoffLocationId = ensureLocation(trip.dropoffName);
+    if (!customerId || !pickupLocationId || !dropoffLocationId) {
+      result.trips.skipped++;
+      errors.push(`Chuyến "${trip.tripCode}" thiếu khách hàng hoặc điểm nâng hạ nên không được import.`);
+      continue;
+    }
+    const tripCosts = trip.costs
+      .map((cost) => ({ id: crypto.randomUUID(), costTypeId: costTypeIdByName.get(normalizeKey(cost.costTypeName)) ?? "", amount: cost.amount, description: "", transactionDate: trip.tripDate, isFuel: normalizeKey(cost.costTypeName) === "đổ dầu" }))
+      .filter((cost) => cost.costTypeId);
+    writer.prepare("trips", {
+      tripCode: trip.tripCode,
+      tripDate: trip.tripDate,
+      customerId,
+      vehicleId,
+      driverId: driverIdByName.get(normalizeKey(trip.driverName || sourceVehicle?.driverName || "")) ?? "",
+      vendorId: vendorIdByName.get(normalizeKey(trip.vendorName || sourceVehicle?.vendorName || "")) ?? "",
+      lot: trip.lot,
+      pickupLocationId,
+      dropoffLocationId,
+      items: trip.items
+        .map((item) => {
+          const itemProductId = productIdByName.get(normalizeKey(item.productName));
+          return itemProductId
+            ? {
+                id: crypto.randomUUID(),
+                productId: itemProductId,
+                quantity: item.quantity,
+                unit: "Chuyến",
+                unitPrice: item.unitPrice,
+                amount: item.quantity * item.unitPrice,
+                dropFee: trip.dropFee,
+              }
+            : null;
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null),
+      costs: tripCosts,
+      driverTripSalary: trip.driverTripSalary,
+      vendorCost: trip.vendorCost,
+      fuelNormAmount: 0,
+      revenue: trip.revenue,
+      cost: trip.cost,
+      profit: trip.profit,
+      fuelActualAmount: tripCosts.filter((cost) => cost.isFuel).reduce((sum, cost) => sum + cost.amount, 0),
+      fuelVarianceAmount: 0,
+      status: normalizeKey(trip.status).includes("hoàn thành") ? "COMPLETED" : "DRAFT",
+      note: trip.note,
+    });
+    tripCodes.add(tripKey);
+    result.trips.created++;
   }
 
   onProgress?.("Đang ghi dữ liệu lên Firestore...");

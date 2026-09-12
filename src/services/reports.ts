@@ -2,14 +2,19 @@ import { CostType } from "@/types/cost-type";
 import { FinanceTransaction } from "@/types/finance";
 import { Customer, Driver, Location, Product, Vehicle } from "@/types/master-data";
 import { Trip, TripStatus } from "@/types/trip";
-import { differenceInCalendarDays, format, parseISO, subDays, subMonths } from "date-fns";
+import { addMonths, differenceInCalendarDays, format, parseISO, startOfMonth, subDays, subMonths } from "date-fns";
 
 /** Chuyến được công nhận doanh thu/chi phí (mục 29-31) — cùng bộ trạng thái với Công nợ (mục 21, 23). */
 const REPORT_TRIP_STATUSES: TripStatus[] = ["COMPLETED", "RECONCILED"];
 
 export function filterTripsInRange(trips: Trip[], fromDate: string, toDate: string): Trip[] {
   return trips.filter(
-    (t) => REPORT_TRIP_STATUSES.includes(t.status) && t.tripDate >= fromDate && t.tripDate <= toDate
+    (t) =>
+      REPORT_TRIP_STATUSES.includes(t.status) &&
+      typeof t.tripDate === "string" &&
+      t.tripDate.length > 0 &&
+      t.tripDate >= fromDate &&
+      t.tripDate <= toDate
   );
 }
 
@@ -109,14 +114,25 @@ export interface MonthlyTrendRow {
   profit: number;
 }
 
-/** Doanh thu/chi phí/lợi nhuận theo tháng (mục 33 biểu đồ) — luôn đủ N tháng gần nhất, kể cả tháng 0 chuyến. */
-export function computeMonthlyTrend(trips: Trip[], monthsBack: number): MonthlyTrendRow[] {
+/** Doanh thu/chi phí/lợi nhuận theo tháng trong khoảng lọc, kể cả tháng 0 chuyến. */
+export function computeMonthlyTrend(trips: Trip[], fromDate: string | number, toDate?: string): MonthlyTrendRow[] {
   const settled = trips.filter((t) => REPORT_TRIP_STATUSES.includes(t.status));
-  const now = new Date();
-  const months = Array.from({ length: monthsBack }, (_, i) => format(subMonths(now, monthsBack - 1 - i), "yyyy-MM"));
+  const from =
+    typeof fromDate === "number"
+      ? startOfMonth(subMonths(new Date(), fromDate - 1))
+      : startOfMonth(parseISO(fromDate));
+  const to =
+    typeof fromDate === "number"
+      ? startOfMonth(new Date())
+      : startOfMonth(parseISO(toDate ?? fromDate));
+  const months: string[] = [];
+  for (let month = from; month <= to; month = addMonths(month, 1)) {
+    months.push(format(month, "yyyy-MM"));
+  }
 
   const byMonth = new Map<string, MonthlyTrendRow>(months.map((m) => [m, { month: m, revenue: 0, cost: 0, profit: 0 }]));
   for (const t of settled) {
+    if (typeof t.tripDate !== "string" || t.tripDate.length < 7) continue;
     const row = byMonth.get(t.tripDate.slice(0, 7));
     if (!row) continue;
     row.revenue += t.revenue || 0;
@@ -190,6 +206,7 @@ export function groupTrips(trips: Trip[], dimension: TripDimension, refs: TripGr
 
   const map = new Map<string, TripGroupRow>();
   for (const t of trips) {
+    if (typeof t.tripDate !== "string" || t.tripDate.length === 0) continue;
     const { key, label } = keyOf(t);
     const row = map.get(key) ?? { key, label, tripCount: 0, revenue: 0, cost: 0, profit: 0 };
     row.tripCount += 1;

@@ -213,7 +213,7 @@ export default function TripListPage() {
         <div className="flex shrink-0 items-center gap-2">
           {can("trip", "EXPORT") && (
             <Button type="button" variant="outline" size="sm" onClick={() => void exportExcel()} className="flex items-center gap-1.5">
-              <Download className="h-3.5 w-3.5" /> Xuất Excel
+              <Download className="h-3.5 w-3.5" /> Xuất bảng kê Excel
             </Button>
           )}
           <DateRangeFilter value={dateRange} onChange={setDateRange} />
@@ -229,8 +229,6 @@ export default function TripListPage() {
             enablePaging
             enableColumnFilter
             enableGlobalFilter
-            enableExport
-            exportFileName="Chuyen-xe"
             onChange={setData}
             onRowClick={goToDetail}
           />

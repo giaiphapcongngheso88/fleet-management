@@ -10,6 +10,8 @@ import { DataTable, DataTableColumnHeaderSort } from "@/components/ui/dataTable"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Form } from "@/components/ui/form";
 import { Select } from "@/components/ui/select/select";
+import { InputDatePicker } from "@/components/ui/input-date-picker";
+import { Label } from "@/components/ui/label";
 import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
 import { useCompanyInfo } from "@/hooks/useCompanyInfo";
@@ -33,6 +35,7 @@ import { Download, Printer } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { format, parseISO } from "date-fns";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currencyFormatter = new Intl.NumberFormat("vi-VN");
@@ -65,6 +68,7 @@ export default function ReceivablePage() {
   const products = useReferenceData<Product>(() => productService.getAll(), "hàng hóa");
 
   const [customerId, setCustomerId] = useState("");
+  const [asOfDate, setAsOfDate] = useState(today());
   const [ledger, setLedger] = useState<LedgerResult | null>(null);
   const [payingTripId, setPayingTripId] = useState<string | undefined>(undefined);
 
@@ -97,13 +101,13 @@ export default function ReceivablePage() {
     });
   };
 
-  const loadLedger = async (id: string) => {
+  const loadLedger = async (id: string, date = asOfDate) => {
     setCustomerId(id);
     setLedger(null);
     if (!id) return;
     const loadingId = showLoading(ELoadingMessages.LOADING_DATA);
     try {
-      const result = await computeCustomerReceivable(id);
+      const result = await computeCustomerReceivable(id, date);
       setLedger(result);
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Lấy công nợ khách hàng thất bại: " + getErrorMessage(err) });
@@ -144,7 +148,7 @@ export default function ReceivablePage() {
       );
       await alert({ title: "Thành công", content: `Đã ghi nhận phiếu thu ${transactionNo}` });
       closeModal();
-      await loadLedger(customerId);
+      await loadLedger(customerId, asOfDate);
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Ghi nhận thanh toán thất bại: " + getErrorMessage(err) });
     } finally {
@@ -308,14 +312,26 @@ export default function ReceivablePage() {
         </div>
       )}
 
-      <div className="print:hidden flex items-center gap-2 max-w-md">
+      <div className="print:hidden flex flex-wrap items-end gap-2">
         <Select
           options={customerOptions}
           value={customerId}
           onChange={(value) => void loadLedger(value)}
           placeholder="Chọn khách hàng để xem công nợ"
-          className="w-full"
+          className="w-80"
         />
+        <div className="w-44">
+         <Label>Đến ngày</Label>
+         <InputDatePicker
+           size="md"
+           value={asOfDate ? parseISO(asOfDate) : undefined}
+           onChange={(date) => {
+             const nextDate = date ? format(date, "yyyy-MM-dd") : "";
+             setAsOfDate(nextDate);
+             if (customerId) void loadLedger(customerId, nextDate);
+           }}
+         />
+        </div>
         {ledger && (
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5 shrink-0">

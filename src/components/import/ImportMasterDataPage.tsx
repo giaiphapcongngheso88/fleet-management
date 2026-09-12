@@ -26,6 +26,7 @@ const ENTITY_LABELS: { key: keyof ParseResult; label: string }[] = [
   { key: "prices", label: "Bảng giá vận chuyển" },
   { key: "costTypes", label: "Loại chi phí" },
   { key: "financeTransactions", label: "Phiếu thu / chi" },
+  { key: "trips", label: "Nhật trình / Chuyến xe" },
 ];
 
 export default function ImportMasterDataPage() {
@@ -124,9 +125,9 @@ export default function ImportMasterDataPage() {
     <div className="flex flex-col gap-4 overflow-y-auto pb-6">
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc đầy đủ dữ liệu từ các sheet: <b>Khách hàng</b>, <b>DS XE</b> (xe / tài xế / ĐV
-          vận tải), <b>DS KH,Nâng,Hạ</b> (điểm nâng hạ / hàng hóa / bảng giá), <b>Thu - Chi</b> (loại chi phí, lấy theo tên
-          cột). Dữ liệu sẽ được xem trước, chỉ ghi vào hệ thống khi bạn xác nhận.
+          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc toàn bộ dữ liệu từ các sheet danh mục, bảng giá,
+          <b>Nhật trình (2)</b> và <b>Sổ thu chi</b>; dữ liệu báo cáo được liên kết thành chuyến xe và phiếu thu / chi.
+          Dữ liệu sẽ được xem trước, chỉ ghi vào hệ thống khi bạn xác nhận.
         </p>
         <div className="flex flex-wrap items-end gap-4">
           <div className="flex flex-col gap-1">

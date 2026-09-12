@@ -148,7 +148,7 @@ function TripGroupTable({
   );
   return (
     <DataTable
-      className="h-full w-full overflow-y-auto border"
+      className="w-full border"
       data={rows}
       columns={columns}
       enablePaging
@@ -171,7 +171,7 @@ function ProductRevenueTable({ rows }: { rows: ProductRevenueRow[] }) {
   );
   return (
     <DataTable
-      className="h-full w-full overflow-y-auto border"
+      className="w-full border"
       data={rows}
       columns={columns}
       enablePaging
@@ -192,7 +192,7 @@ function CostTypeTable({ rows }: { rows: CostTypeRow[] }) {
   );
   return (
     <DataTable
-      className="h-full w-full overflow-y-auto border"
+      className="w-full border"
       data={rows}
       columns={columns}
       enablePaging
@@ -273,7 +273,7 @@ function TripDetailTable({ rows }: { rows: TripDetailRow[] }) {
   );
   return (
     <DataTable
-      className="h-full w-full overflow-y-auto border"
+      className="w-full border"
       data={rows}
       columns={columns}
       enablePaging
@@ -351,7 +351,10 @@ export default function ReportPage() {
 
   const refs = useMemo(() => ({ customers, vehicles, drivers, locations }), [customers, vehicles, drivers, locations]);
 
-  const monthlyTrend: MonthlyTrendRow[] = useMemo(() => computeMonthlyTrend(trips, 12), [trips]);
+  const monthlyTrend: MonthlyTrendRow[] = useMemo(
+    () => computeMonthlyTrend(trips, dateRange.from, dateRange.to),
+    [trips, dateRange]
+  );
   const topCustomers = useMemo(
     () => groupTrips(tripsInRange, "customer", refs).slice(0, 8).map((r) => ({ label: r.label, value: r.revenue })),
     [tripsInRange, refs]

@@ -41,13 +41,14 @@ async function computeLedger(params: {
   amountField: "revenue" | "vendorCost";
   transactionType: TransactionType;
   objectType: "CUSTOMER" | "VENDOR";
+  asOfDate?: string;
 }): Promise<LedgerResult> {
-  const { tripField, objectId, amountField, transactionType, objectType } = params;
+  const { tripField, objectId, amountField, transactionType, objectType, asOfDate } = params;
 
   const tripsSnap = await getDocs(query(collection(db, "trips"), where(tripField, "==", objectId)));
   const trips = tripsSnap.docs
     .map((d) => ({ id: d.id, ...d.data() }) as Trip)
-    .filter((t) => RECEIVABLE_STATUSES.includes(t.status));
+    .filter((t) => RECEIVABLE_STATUSES.includes(t.status) && (!asOfDate || t.tripDate <= asOfDate));
 
   const paymentsSnap = await getDocs(
     query(
@@ -59,7 +60,7 @@ async function computeLedger(params: {
   );
   const payments = paymentsSnap.docs
     .map((d) => ({ id: d.id, ...d.data() }) as FinanceTransaction)
-    .filter((p) => p.status === "ACTIVE");
+    .filter((p) => p.status === "ACTIVE" && (!asOfDate || p.transactionDate <= asOfDate));
 
   let unlinkedPayments = 0;
   const paidByTripId = new Map<string, number>();
@@ -90,24 +91,26 @@ async function computeLedger(params: {
 }
 
 /** Công nợ khách hàng (mục 21) — SUM(revenue chuyến COMPLETED/RECONCILED) - SUM(Phiếu thu). */
-export function computeCustomerReceivable(customerId: string): Promise<LedgerResult> {
+export function computeCustomerReceivable(customerId: string, asOfDate?: string): Promise<LedgerResult> {
   return computeLedger({
     tripField: "customerId",
     objectId: customerId,
     amountField: "revenue",
     transactionType: "RECEIPT",
     objectType: "CUSTOMER",
+    asOfDate,
   });
 }
 
 /** Công nợ đơn vị vận tải (mục 23) — SUM(vendorCost chuyến COMPLETED/RECONCILED) - SUM(Phiếu chi). */
-export function computeVendorPayable(vendorId: string): Promise<LedgerResult> {
+export function computeVendorPayable(vendorId: string, asOfDate?: string): Promise<LedgerResult> {
   return computeLedger({
     tripField: "vendorId",
     objectId: vendorId,
     amountField: "vendorCost",
     transactionType: "PAYMENT",
     objectType: "VENDOR",
+    asOfDate,
   });
 }
 

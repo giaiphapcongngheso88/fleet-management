@@ -15,7 +15,7 @@ import { AppUser } from "@/types/user";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ROLE_LABEL } from "@/utils/permissions";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CreateUserModal from "./CreateUserModal";
 import EditUserModal from "./EditUserModal";
@@ -23,6 +23,7 @@ import EditUserModal from "./EditUserModal";
 export default function UsersPage() {
   const [data, setData] = useState<AppUser[]>([]);
   const [editing, setEditing] = useState<AppUser | null>(null);
+  const [viewingOnly, setViewingOnly] = useState(false);
   const { showLoading, hideLoading } = useLoading();
   const { alert, confirm } = useFeedbackDialog();
   const { can } = usePermission();
@@ -94,6 +95,7 @@ export default function UsersPage() {
         accessorKey: "role",
         header: ({ column }) => <DataTableColumnHeaderSort column={column} title="Vai trò" />,
         cell: ({ row }) => <div>{ROLE_LABEL[row.original.role]}</div>,
+        meta: { exportValue: (row) => ROLE_LABEL[row.role] },
       },
       {
         id: "status",
@@ -108,12 +110,27 @@ export default function UsersPage() {
           const item = row.original;
           const actions: RowAction[] = [];
 
+          if (can("user", "VIEW")) {
+            actions.push({
+              key: "view",
+              label: "Xem",
+              icon: <Eye className="h-4 w-4 text-gray-500" />,
+              onSelect: () => {
+                setViewingOnly(true);
+                setEditing(item);
+              },
+            });
+          }
+
           if (can("user", "UPDATE")) {
             actions.push({
               key: "edit",
               label: "Sửa thông tin",
               icon: <Edit className="h-4 w-4 text-gray-500" />,
-              onSelect: () => setEditing(item),
+              onSelect: () => {
+                setViewingOnly(false);
+                setEditing(item);
+              },
             });
             actions.push(
               item.status === "ACTIVE"
@@ -152,6 +169,8 @@ export default function UsersPage() {
           enablePaging
           enableColumnFilter
           enableGlobalFilter
+          enableExport
+          exportFileName="Nguoi-dung"
           onChange={setData}
         />
       </div>
@@ -164,7 +183,9 @@ export default function UsersPage() {
       </div>
 
       {createModal.isOpen && <CreateUserModal onClose={createModal.closeModal} fetchData={fetchData} />}
-      {editing && <EditUserModal target={editing} onClose={() => setEditing(null)} fetchData={fetchData} />}
+      {editing && (
+        <EditUserModal target={editing} onClose={() => setEditing(null)} fetchData={fetchData} viewOnly={viewingOnly} />
+      )}
     </div>
   );
 }

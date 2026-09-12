@@ -1,9 +1,10 @@
 "use client";
 
-import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { EntityImportConfig, EntityListPage } from "@/components/master-data/EntityListPage";
 import { TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { productService } from "@/services/master-data";
 import { Product } from "@/types/master-data";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -53,6 +54,30 @@ const columns: ColumnDef<Product>[] = [
   },
 ];
 
+const IMPORT_COLUMNS: ImportColumn<Product>[] = [
+  { key: "code", header: "Mã hàng hóa", required: true, example: "HH001" },
+  { key: "name", header: "Tên hàng hóa", required: true, example: "Gạch ốp lát" },
+  { key: "unit", header: "Đơn vị tính", required: true, example: "Chuyến" },
+];
+
+const importConfig: EntityImportConfig<Product> = {
+  columns: IMPORT_COLUMNS,
+  sheetName: "Hàng hóa",
+  templateFileName: "mau-import-hang-hoa.xlsx",
+  validateRow: async (raw, rowsSoFar, existingData) => {
+    const code = String(raw.code ?? "").trim();
+    const name = String(raw.name ?? "").trim();
+    const unit = String(raw.unit ?? "").trim();
+    const errors: string[] = [];
+    if (code) {
+      if (existingData.some((p) => p.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" đã tồn tại trong hệ thống`);
+      else if (rowsSoFar.some((p) => p.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" bị trùng trong file`);
+    }
+    if (errors.length > 0) return { errors };
+    return { payload: { code, name, unit, status: "ACTIVE" }, errors: [] };
+  },
+};
+
 export default function ProductPage() {
   return (
     <EntityListPage<Product, FormValues>
@@ -68,6 +93,7 @@ export default function ProductPage() {
         const dup = await productService.existsByField("code", values.code, editingId);
         return dup ? "Mã hàng hóa đã tồn tại" : null;
       }}
+      importConfig={importConfig}
       columns={columns}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">

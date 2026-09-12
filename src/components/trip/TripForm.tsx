@@ -2,7 +2,7 @@
 
 import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
-import { DateFormField, SelectFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
+import { CurrencyFormField, DateFormField, SelectFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
 import { TripStatusBadge } from "@/components/trip/TripStatusBadge";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
@@ -17,6 +17,7 @@ import { CostType } from "@/types/cost-type";
 import { Customer, Driver, Location, Product, Vehicle } from "@/types/master-data";
 import { TRIP_STATUS_LABEL, Trip, TripCost, TripItem, TripStatus } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
+import { consumeQuoteToTripPrefill } from "@/utils/quoteToTripHandoff";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Plus, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -177,6 +178,7 @@ export function TripForm({ tripId }: { tripId?: string }) {
   useEffect(() => {
     if (mode !== "edit" || !tripId) return;
     let cancelled = false;
+    const loadingId = showLoading(ELoadingMessages.LOADING_DATA);
     (async () => {
       try {
         const trip = await tripService.getById(tripId);
@@ -191,14 +193,32 @@ export function TripForm({ tripId }: { tripId?: string }) {
       } catch (err: unknown) {
         await alert({ title: "Lỗi", content: "Tải chuyến thất bại: " + getErrorMessage(err) });
       } finally {
+        hideLoading(loadingId);
         if (!cancelled) setLoadingTrip(false);
       }
     })();
     return () => {
       cancelled = true;
+      hideLoading(loadingId);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, tripId]);
+
+  // Điền sẵn từ 1 dòng báo giá đã duyệt khi bấm "Tạo chuyến" ở trang Báo giá (mục 28.5 mở rộng).
+  // Chỉ áp dụng đúng 1 lần lúc mới vào trang tạo chuyến, không áp dụng ở chế độ sửa.
+  useEffect(() => {
+    if (mode !== "create") return;
+    const prefill = consumeQuoteToTripPrefill();
+    if (!prefill) return;
+    form.setValue("customerId", prefill.customerId);
+    form.setValue("pickupLocationId", prefill.pickupLocationId);
+    form.setValue("dropoffLocationId", prefill.dropoffLocationId);
+    form.setValue("items.0.productId", prefill.productId);
+    form.setValue("items.0.quantity", prefill.quantity);
+    form.setValue("items.0.unit", prefill.unit);
+    form.setValue("items.0.unitPrice", prefill.unitPrice);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.code} - ${c.name}` }));
   const vehicleOptions = vehicles.map((v) => ({ value: v.id, label: v.licensePlate }));
@@ -216,6 +236,10 @@ export function TripForm({ tripId }: { tripId?: string }) {
 
   const canOverridePricing = can("trip", "APPROVE");
   const isLocked = mode === "edit" && loadedTrip?.status === "RECONCILED" && !can("trip", "UNLOCK");
+  // Vào từ "Xem chi tiết" (role chỉ có VIEW, không có UPDATE) — khóa toàn bộ form, không phải chỉ
+  // khóa khi chuyến đã đối soát như isLocked ở trên.
+  const viewOnly = mode === "edit" && !can("trip", "UPDATE");
+  const readOnly = isLocked || viewOnly;
 
   const onVehicleChange = (vehicleId: string) => {
     const vehicle = vehicles.find((v) => v.id === vehicleId);
@@ -270,6 +294,20 @@ export function TripForm({ tripId }: { tripId?: string }) {
       form.setValue("driverTripSalary", price.driverTripSalary ?? 0);
       form.setValue("vendorCost", price.vendorCost ?? 0);
       form.setValue("fuelNormAmount", price.fuelNormAmount ?? 0);
+    }
+  };
+
+  /**
+   * Đổi Khách hàng/Điểm nâng/Điểm hạ (field ở đầu form) phải tra lại giá cho MỌI dòng hàng hóa đã
+   * chọn — nếu không, dòng đã chọn hàng hóa trước khi điền đủ khách hàng/tuyến (hoặc sửa lại tuyến
+   * sau khi đã chọn hàng hóa) sẽ không bao giờ tự tra lại giá, giữ nguyên đơn giá cũ/0 một cách im
+   * lặng dù bảng giá cho tổ hợp mới đã tồn tại.
+   */
+  const lookupPriceForAllItems = async () => {
+    const values = form.getValues();
+    for (let i = 0; i < values.items.length; i++) {
+      const productId = values.items[i].productId;
+      if (productId) await lookupPriceForItem(i, productId);
     }
   };
 
@@ -373,7 +411,13 @@ export function TripForm({ tripId }: { tripId?: string }) {
             đổi.
           </div>
         )}
+        {viewOnly && !isLocked && (
+          <div className="rounded-lg border border-gray-300 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-white/[0.03] dark:text-gray-300">
+            Bạn chỉ có quyền xem — không thể sửa chuyến này.
+          </div>
+        )}
 
+        <fieldset disabled={readOnly} className="contents">
         <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03]">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-base font-semibold text-gray-800 dark:text-white/90">Thông tin chung</h4>
@@ -381,7 +425,15 @@ export function TripForm({ tripId }: { tripId?: string }) {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <DateFormField control={form.control} name="tripDate" label="Ngày chuyến" clearable={false} required />
-            <SelectFormField control={form.control} name="customerId" label="Khách hàng" options={customerOptions} placeholder="Chọn khách hàng" required />
+            <SelectFormField
+              control={form.control}
+              name="customerId"
+              label="Khách hàng"
+              options={customerOptions}
+              placeholder="Chọn khách hàng"
+              required
+              onValueChange={() => void lookupPriceForAllItems()}
+            />
             <SelectFormField
               control={form.control}
               name="vehicleId"
@@ -392,8 +444,24 @@ export function TripForm({ tripId }: { tripId?: string }) {
               onValueChange={onVehicleChange}
             />
             <SelectFormField control={form.control} name="driverId" label="Tài xế" options={driverOptions} placeholder="Chọn tài xế" required />
-            <SelectFormField control={form.control} name="pickupLocationId" label="Điểm nâng" options={pickupOptions} placeholder="Chọn điểm nâng" required />
-            <SelectFormField control={form.control} name="dropoffLocationId" label="Điểm hạ" options={dropoffOptions} placeholder="Chọn điểm hạ" required />
+            <SelectFormField
+              control={form.control}
+              name="pickupLocationId"
+              label="Điểm nâng"
+              options={pickupOptions}
+              placeholder="Chọn điểm nâng"
+              required
+              onValueChange={() => void lookupPriceForAllItems()}
+            />
+            <SelectFormField
+              control={form.control}
+              name="dropoffLocationId"
+              label="Điểm hạ"
+              options={dropoffOptions}
+              placeholder="Chọn điểm hạ"
+              required
+              onValueChange={() => void lookupPriceForAllItems()}
+            />
             <TextFormField control={form.control} name="lot" label="Lot" />
             <SelectFormField control={form.control} name="status" label="Trạng thái" options={STATUS_OPTIONS} required />
           </div>
@@ -421,8 +489,8 @@ export function TripForm({ tripId }: { tripId?: string }) {
                 />
                 <TextFormField control={form.control} name={`items.${index}.quantity`} label="Số lượng" type="number" required />
                 <TextFormField control={form.control} name={`items.${index}.unit`} label="ĐVT" />
-                <TextFormField control={form.control} name={`items.${index}.unitPrice`} label="Đơn giá" type="number" required />
-                <TextFormField control={form.control} name={`items.${index}.dropFee`} label="Hạ hàng" type="number" />
+                <CurrencyFormField control={form.control} name={`items.${index}.unitPrice`} label="Đơn giá" required />
+                <CurrencyFormField control={form.control} name={`items.${index}.dropFee`} label="Hạ hàng" />
                 <div className="flex items-center justify-between sm:col-span-6 text-sm text-gray-500">
                   <span>
                     Thành tiền: <strong>{currencyFormatter.format(liveItems[index]?.amount ?? 0)}</strong>
@@ -443,15 +511,14 @@ export function TripForm({ tripId }: { tripId?: string }) {
             Giá trị chốt theo bảng giá (lương tài xế / cước thuê / định mức dầu)
           </h4>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <TextFormField
+            <CurrencyFormField
               control={form.control}
               name="driverTripSalary"
               label="Lương tài xế / chuyến"
-              type="number"
               disabled={!canOverridePricing}
             />
-            <TextFormField control={form.control} name="vendorCost" label="Cước thuê (ĐV vận tải)" type="number" disabled={!canOverridePricing} />
-            <TextFormField control={form.control} name="fuelNormAmount" label="Định mức tiền dầu tham chiếu" type="number" disabled={!canOverridePricing} />
+            <CurrencyFormField control={form.control} name="vendorCost" label="Cước thuê (ĐV vận tải)" disabled={!canOverridePricing} />
+            <CurrencyFormField control={form.control} name="fuelNormAmount" label="Định mức tiền dầu tham chiếu" disabled={!canOverridePricing} />
           </div>
           {!canOverridePricing && (
             <p className="text-xs text-gray-400 mt-2">
@@ -488,7 +555,7 @@ export function TripForm({ tripId }: { tripId?: string }) {
                     required
                   />
                   <DateFormField control={form.control} name={`costs.${index}.transactionDate`} label="Ngày" clearable={false} required />
-                  <TextFormField control={form.control} name={`costs.${index}.amount`} label="Số tiền" type="number" required />
+                  <CurrencyFormField control={form.control} name={`costs.${index}.amount`} label="Số tiền" required />
                   <TextFormField control={form.control} name={`costs.${index}.description`} label="Mô tả" className="sm:col-span-2" />
                   <div className="flex justify-end sm:col-span-5">
                     <Button type="button" variant="ghost" size="sm" onClick={() => costsArray.remove(index)}>
@@ -528,12 +595,13 @@ export function TripForm({ tripId }: { tripId?: string }) {
         </section>
 
         <TextAreaFormField control={form.control} name="note" label="Ghi chú (bắt buộc khi hủy chuyến)" />
+        </fieldset>
 
         <div className="flex justify-end gap-2">
           <Button type="button" variant="outline" onClick={() => router.push("/van-tai/nhat-trinh")}>
             Hủy bỏ
           </Button>
-          {!isLocked && (
+          {!readOnly && (
             <Button type="submit" variant="default">
               Lưu chuyến
             </Button>

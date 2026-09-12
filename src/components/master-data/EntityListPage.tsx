@@ -2,6 +2,7 @@
 
 import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
+import { EntityImportDialog } from "@/components/common/EntityImportDialog";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { RowAction, RowActionsMenu } from "@/components/common/RowActionsMenu";
 import useLoading from "@/components/loading";
@@ -13,12 +14,31 @@ import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
 import { useModal } from "@/hooks/useModal";
 import { CrudService } from "@/lib/firestoreCrud";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { BaseEntity } from "@/types/common";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye, Upload } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { DefaultValues, FieldValues, Resolver, UseFormReturn, useForm } from "react-hook-form";
+
+type CreatePayload<T extends BaseEntity> = Omit<T, "id" | "createdAt" | "updatedAt" | "createdBy" | "updatedBy">;
+
+export interface EntityImportConfig<T extends BaseEntity> {
+  columns: ImportColumn<T>[];
+  sheetName: string;
+  templateFileName: string;
+  /**
+   * Validate + build payload cho 1 dòng đã đọc từ file Excel (mục 34.1, 34.3). `rowsSoFar` là các
+   * payload đã hợp lệ ở những dòng trước trong cùng file — dùng để tự phát hiện trùng ngay trong file
+   * đang import, không chỉ trùng với dữ liệu đã có trong hệ thống.
+   */
+  validateRow: (
+    raw: Partial<Record<keyof T, unknown>>,
+    rowsSoFar: CreatePayload<T>[],
+    existingData: T[]
+  ) => Promise<{ payload?: CreatePayload<T>; errors: string[] }>;
+}
 
 export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldValues> {
   resourceKey: string;
@@ -52,6 +72,10 @@ export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldVa
    * (hành vi cũ, không đổi cho các trang chưa dùng prop này).
    */
   dataFilter?: (data: T[]) => T[];
+  /** Cho phép import hàng loạt từ Excel qua file mẫu tự sinh (mục 34) — không set = không hiện nút Import. */
+  importConfig?: EntityImportConfig<T>;
+  /** Thêm thao tác riêng vào menu "..." của từng dòng (vd "In phiếu", mục 36) — chèn trước Sửa/Ngừng hoạt động. */
+  extraRowActions?: (item: T) => RowAction[];
 }
 
 export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>({
@@ -62,6 +86,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
   toFormValues,
   buildCreatePayload,
   buildUpdatePayload,
+  importConfig,
   columns,
   renderForm,
   validate,
@@ -69,14 +94,19 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
   dialogClassName,
   renderExtra,
   dataFilter,
+  extraRowActions,
 }: EntityListPageProps<T, TForm>) {
   const [data, setData] = useState<T[]>([]);
   const [editing, setEditing] = useState<T | null>(null);
+  /** Mở dialog ở chế độ chỉ xem (mọi role có quyền VIEW đều bấm được, kể cả role không có UPDATE —
+   * trước đây không có cách nào xem chi tiết 1 dòng nếu không có quyền Sửa). */
+  const [viewOnly, setViewOnly] = useState(false);
   const { showLoading, hideLoading } = useLoading();
   const { alert, confirm } = useFeedbackDialog();
   const { can } = usePermission();
   const { user } = useCurrentUser();
   const { isOpen, openModal, closeModal } = useModal();
+  const { isOpen: isImportOpen, openModal: openImportModal, closeModal: closeImportModal } = useModal();
 
   const fetchData = useCallback(async () => {
     const loadingId = showLoading(ELoadingMessages.LOADING_DATA);
@@ -104,12 +134,21 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
 
   const openCreate = () => {
     setEditing(null);
+    setViewOnly(false);
     form.reset(defaultValues);
     openModal();
   };
 
   const openEdit = (item: T) => {
     setEditing(item);
+    setViewOnly(false);
+    form.reset(toFormValues(item));
+    openModal();
+  };
+
+  const openView = (item: T) => {
+    setEditing(item);
+    setViewOnly(true);
     form.reset(toFormValues(item));
     openModal();
   };
@@ -170,6 +209,17 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
         const item = row.original;
         const actions: RowAction[] = [];
 
+        if (can(resourceKey, "VIEW")) {
+          actions.push({
+            key: "view",
+            label: "Xem",
+            icon: <Eye className="h-4 w-4 text-gray-500" />,
+            onSelect: () => openView(item),
+          });
+        }
+
+        actions.push(...(extraRowActions ? extraRowActions(item) : []));
+
         if (can(resourceKey, "UPDATE")) {
           actions.push({
             key: "edit",
@@ -221,10 +271,17 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
           enablePaging
           enableColumnFilter
           enableGlobalFilter
+          enableExport
+          exportFileName={entityLabel}
           onChange={setData}
         />
       </div>
-      <div className="border-t p-2 flex justify-end shrink-0">
+      <div className="border-t p-2 flex justify-end gap-2 shrink-0">
+        {importConfig && can(resourceKey, "IMPORT") && (
+          <Button variant="outline" onClick={openImportModal} className="flex items-center gap-2">
+            <Upload className="h-4 w-4" /> Import
+          </Button>
+        )}
         {can(resourceKey, "CREATE") && (
           <Button variant="default" onClick={openCreate} className="flex items-center gap-2">
             Thêm
@@ -232,21 +289,51 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
         )}
       </div>
 
+      {importConfig && (
+        <EntityImportDialog<T, CreatePayload<T>>
+          open={isImportOpen}
+          onOpenChange={(open) => (open ? openImportModal() : closeImportModal())}
+          entityLabel={entityLabel}
+          sheetName={importConfig.sheetName}
+          templateFileName={importConfig.templateFileName}
+          columns={importConfig.columns}
+          validateRow={(raw, rowsSoFar) => importConfig.validateRow(raw, rowsSoFar, data)}
+          onCreateOne={async (payload) => {
+            await service.create(payload, user?.id ?? "");
+          }}
+          onImported={fetchData}
+        />
+      )}
+
       {isOpen && (
         <Dialog open={true} onOpenChange={closeModal}>
           <DialogContent className={dialogClassName ?? "bg-white min-w-[600px] flex flex-col justify-between p-4"}>
             <DialogHeader className="w-full">
               <DialogTitle className="text-md">
-                {mode === "create" ? `Thêm ${entityLabel.toLowerCase()}` : `Cập nhật ${entityLabel.toLowerCase()}`}
+                {viewOnly
+                  ? `Xem ${entityLabel.toLowerCase()}`
+                  : mode === "create"
+                    ? `Thêm ${entityLabel.toLowerCase()}`
+                    : `Cập nhật ${entityLabel.toLowerCase()}`}
               </DialogTitle>
             </DialogHeader>
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-                <ErrorBoundary label={`form ${entityLabel.toLowerCase()}`}>{renderForm(form, mode)}</ErrorBoundary>
+                {/* Chế độ Xem: khóa toàn bộ input trong form bằng 1 fieldset chung, không phải sửa từng
+                    field ở từng trang — display:contents để không đổi layout hiện có. */}
+                <fieldset disabled={viewOnly} className="contents">
+                  <ErrorBoundary label={`form ${entityLabel.toLowerCase()}`}>{renderForm(form, mode)}</ErrorBoundary>
+                </fieldset>
                 <div className="flex justify-end mt-4 w-full">
-                  <Button variant="default" type="submit" className="flex items-center gap-2">
-                    Lưu
-                  </Button>
+                  {viewOnly ? (
+                    <Button type="button" variant="outline" onClick={closeModal}>
+                      Đóng
+                    </Button>
+                  ) : (
+                    <Button variant="default" type="submit" className="flex items-center gap-2">
+                      Lưu
+                    </Button>
+                  )}
                 </div>
               </form>
             </Form>

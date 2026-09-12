@@ -2,7 +2,8 @@
 
 import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
-import { DateFormField, SelectFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
+import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeader";
+import { CurrencyFormField, DateFormField, SelectFormField, TextAreaFormField } from "@/components/master-data/FormFields";
 import useLoading from "@/components/loading";
 import { Button } from "@/components/ui/button";
 import { DataTable, DataTableColumnHeaderSort } from "@/components/ui/dataTable";
@@ -11,6 +12,7 @@ import { Form } from "@/components/ui/form";
 import { Select } from "@/components/ui/select/select";
 import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
+import { useCompanyInfo } from "@/hooks/useCompanyInfo";
 import { useModal } from "@/hooks/useModal";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { locationService, productService, vehicleService, vendorService } from "@/services/master-data";
@@ -21,11 +23,13 @@ import {
   LedgerResult,
   TripLedgerRow,
 } from "@/services/finance";
+import { exportLedgerToExcel } from "@/lib/excel/ledgerExport";
 import { Location, Product, Vehicle, Vendor } from "@/types/master-data";
 import { PAYMENT_METHOD_LABEL, PaymentMethod } from "@/types/finance";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
+import { Download, Printer } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -53,6 +57,7 @@ export default function PayablePage() {
   const { showLoading, hideLoading } = useLoading();
   const { user } = useCurrentUser();
   const { isOpen, openModal, closeModal } = useModal();
+  const company = useCompanyInfo();
 
   const vendors = useReferenceData<Vendor>(() => vendorService.getAll(), "đơn vị vận tải");
   const locations = useReferenceData<Location>(() => locationService.getAll(), "điểm nâng/hạ");
@@ -67,8 +72,30 @@ export default function PayablePage() {
   const locationName = (id: string) => locations.find((l) => l.id === id)?.name ?? "";
   const vehiclePlate = (id: string) => vehicles.find((v) => v.id === id)?.licensePlate ?? "";
   const productName = (id?: string) => products.find((p) => p.id === id)?.name ?? "";
+  const vendorName = (id: string) => vendors.find((v) => v.id === id)?.name ?? "";
 
   const canPay = can("payable", "UPDATE");
+
+  const onExportExcel = () => {
+    if (!ledger) return;
+    void exportLedgerToExcel({
+      documentTitle: "Bảng kê công nợ đơn vị vận tải",
+      partnerFieldLabel: "Tên ĐV vận tải:",
+      partnerName: vendorName(vendorId),
+      partnerTaxCode: vendors.find((v) => v.id === vendorId)?.taxCode,
+      partnerAddress: vendors.find((v) => v.id === vendorId)?.address,
+      partnerPhone: vendors.find((v) => v.id === vendorId)?.phone,
+      ledger,
+      vehiclePlate,
+      locationName,
+      productName,
+      amountLabel: "Cước thuê",
+      amountValue: (trip) => trip.vendorCost ?? 0,
+      paidLabel: "Đã trả",
+      confirmLeftLabel: "XÁC NHẬN CỦA ĐƠN VỊ VẬN TẢI",
+      fileName: `cong-no-${vendorName(vendorId)}`,
+    });
+  };
 
   const loadLedger = async (id: string) => {
     setVendorId(id);
@@ -142,36 +169,43 @@ export default function PayablePage() {
         id: "vehicle",
         header: () => "BKS",
         cell: ({ row }) => <div className="whitespace-nowrap">{vehiclePlate(row.original.trip.vehicleId)}</div>,
+        meta: { exportValue: (row) => vehiclePlate(row.trip.vehicleId) },
       },
       {
         id: "pickup",
         header: () => "Điểm nâng",
         cell: ({ row }) => <div className="whitespace-nowrap">{locationName(row.original.trip.pickupLocationId)}</div>,
+        meta: { exportValue: (row) => locationName(row.trip.pickupLocationId) },
       },
       {
         id: "dropoff",
         header: () => "Điểm hạ",
         cell: ({ row }) => <div className="whitespace-nowrap">{locationName(row.original.trip.dropoffLocationId)}</div>,
+        meta: { exportValue: (row) => locationName(row.trip.dropoffLocationId) },
       },
       {
         id: "product",
         header: () => "Hàng hóa",
         cell: ({ row }) => <div className="whitespace-nowrap">{productName(row.original.trip.items[0]?.productId)}</div>,
+        meta: { exportValue: (row) => productName(row.trip.items[0]?.productId) },
       },
       {
         id: "unit",
         header: () => "ĐVT",
         cell: ({ row }) => <div>{row.original.trip.items[0]?.unit}</div>,
+        meta: { exportValue: (row) => row.trip.items[0]?.unit ?? "" },
       },
       {
         id: "quantity",
         header: () => "Số lượng",
         cell: ({ row }) => <div className="text-right">{row.original.trip.items[0]?.quantity}</div>,
+        meta: { exportValue: (row) => row.trip.items[0]?.quantity ?? 0 },
       },
       {
         id: "dropFee",
         header: () => "Hạ hàng",
         cell: ({ row }) => <div className="text-right whitespace-nowrap">{currencyFormatter.format(row.original.trip.items[0]?.dropFee ?? 0)}</div>,
+        meta: { exportValue: (row) => row.trip.items[0]?.dropFee ?? 0 },
       },
       {
         id: "vendorCost",
@@ -199,6 +233,7 @@ export default function PayablePage() {
         id: "note",
         header: () => "Nội dung",
         cell: ({ row }) => <div className="whitespace-nowrap text-gray-500">{row.original.trip.note}</div>,
+        meta: { exportValue: (row) => row.trip.note ?? "" },
       },
       {
         id: "actions",
@@ -219,7 +254,55 @@ export default function PayablePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="max-w-md">
+      {ledger && (
+        <div className="hidden print:block">
+          <PrintHeader title="Bảng kê công nợ đơn vị vận tải" company={company} />
+          <p className="text-sm mb-2">
+            <strong>Đơn vị vận tải:</strong> {vendorName(vendorId)}
+          </p>
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b-2 border-black">
+                <th className="text-left py-1 px-2">Ngày</th>
+                <th className="text-left py-1 px-2">Xe</th>
+                <th className="text-left py-1 px-2">Tuyến</th>
+                <th className="text-left py-1 px-2">Hàng hóa</th>
+                <th className="text-right py-1 px-2">Cước thuê</th>
+                <th className="text-right py-1 px-2">Đã trả</th>
+                <th className="text-right py-1 px-2">Còn lại</th>
+              </tr>
+            </thead>
+            <tbody>
+              {ledger.rows.map((row) => (
+                <tr key={row.trip.id} className="border-b border-gray-300">
+                  <td className="py-1 px-2">{row.trip.tripDate}</td>
+                  <td className="py-1 px-2">{vehiclePlate(row.trip.vehicleId)}</td>
+                  <td className="py-1 px-2">
+                    {locationName(row.trip.pickupLocationId)} → {locationName(row.trip.dropoffLocationId)}
+                  </td>
+                  <td className="py-1 px-2">{productName(row.trip.items[0]?.productId)}</td>
+                  <td className="text-right py-1 px-2">{currencyFormatter.format(row.trip.vendorCost ?? 0)}</td>
+                  <td className="text-right py-1 px-2">{currencyFormatter.format(row.paid)}</td>
+                  <td className="text-right py-1 px-2">{currencyFormatter.format(row.remaining)}</td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-black font-semibold">
+                <td colSpan={4} className="text-right py-1 px-2">
+                  Tổng cộng
+                </td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(ledger.totalRevenue)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(ledger.totalPaid)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(ledger.balance)}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <PrintSignatureBlock partyLabel="Xác nhận của đơn vị vận tải" company={company} />
+        </div>
+      )}
+
+      <div className="print:hidden flex items-center gap-2 max-w-md">
         <Select
           options={vendorOptions}
           value={vendorId}
@@ -227,10 +310,20 @@ export default function PayablePage() {
           placeholder="Chọn đơn vị vận tải để xem công nợ"
           className="w-full"
         />
+        {ledger && (
+          <>
+            <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5 shrink-0">
+              <Printer className="h-3.5 w-3.5" /> In
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={onExportExcel} className="flex items-center gap-1.5 shrink-0">
+              <Download className="h-3.5 w-3.5" /> Xuất Excel
+            </Button>
+          </>
+        )}
       </div>
 
       {ledger && (
-        <>
+        <div className="print:hidden flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-white/[0.03]">
               <p className="text-xs text-gray-400">Tổng cước thuê (đã hoàn thành)</p>
@@ -273,9 +366,11 @@ export default function PayablePage() {
               enablePaging
               enableColumnFilter
               enableGlobalFilter
+              enableExport
+              exportFileName="Cong-no-don-vi-van-tai"
             />
           </div>
-        </>
+        </div>
       )}
 
       {isOpen && (
@@ -289,7 +384,7 @@ export default function PayablePage() {
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmitPayment)} className="flex flex-col gap-3">
                 <DateFormField control={form.control} name="transactionDate" label="Ngày chi" clearable={false} required />
-                <TextFormField control={form.control} name="amount" label="Số tiền" type="number" required />
+                <CurrencyFormField control={form.control} name="amount" label="Số tiền" required />
                 <SelectFormField control={form.control} name="paymentMethod" label="Phương thức" options={PAYMENT_METHOD_OPTIONS} required />
                 <TextAreaFormField control={form.control} name="description" label="Nội dung" />
                 <div className="flex justify-end mt-2">

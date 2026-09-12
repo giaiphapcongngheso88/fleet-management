@@ -113,6 +113,28 @@ service cloud.firestore {
       allow write: if canManageFinance();
     }
 
+    // Báo giá (mục 28 đặc tả nghiệp vụ) — cùng nhóm vai trò được tạo/sửa như Chuyến xe
+    // (ADMIN/QUAN_LY/DIEU_HANH), KHÔNG gồm Kế toán (đúng resource "quote" trong permissions.ts).
+    match /quotes/{id} {
+      allow read: if isActiveUser();
+      allow write: if canManageMasterData();
+    }
+
+    // Phân quyền động (mục 38) — mọi user đã đăng nhập cần đọc để PermissionContext tính can() đúng
+    // ngay khi tải trang; chỉ Admin được ghi (đổi qua màn hình Phân quyền — src/utils/permissions.ts
+    // luôn cấm ghi đè vai trò ADMIN dù rules có cho phép, an toàn 2 lớp).
+    match /role_permissions/{roleId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
+    // Thông tin công ty dùng cho letterhead/chữ ký khi xuất Excel (mục 35) — mọi user đã đăng nhập
+    // cần đọc để xuất Excel đúng thông tin mới nhất; chỉ Admin được sửa qua trang Thông tin công ty.
+    match /settings/{docId} {
+      allow read: if isActiveUser();
+      allow write: if isAdmin();
+    }
+
     // Mặc định: chặn tất cả các collection chưa được khai báo tường minh ở trên.
     match /{document=**} {
       allow read, write: if false;

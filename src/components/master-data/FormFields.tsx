@@ -5,6 +5,7 @@ import { cn } from "@/app/lib/utils";
 import { Select } from "@/components/ui/select/select";
 import { SelectOption } from "@/components/ui/select/select-list";
 import { Checkbox } from "@/components/ui/checkbox";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { FormControl, FormField, FormItem, FormMessage } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { InputDatePicker } from "@/components/ui/input-date-picker";
@@ -59,6 +60,40 @@ export function TextFormField<TForm extends FieldValues>({
                   field.onChange(type === "number" ? e.target.valueAsNumber || 0 : e.target.value)
                 }
                 value={field.value ?? ""}
+              />
+            </FormControl>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </div>
+  );
+}
+
+/** Ô nhập số tiền, tự format phân cách hàng nghìn khi gõ — dùng cho mọi field tiền tệ (đơn giá, chi phí, lương...). */
+export function CurrencyFormField<TForm extends FieldValues>({
+  control,
+  name,
+  label,
+  className,
+  required,
+  disabled,
+}: CommonProps<TForm> & { disabled?: boolean }) {
+  return (
+    <div className={className}>
+      <FieldLabel label={label} required={required} />
+      <FormField
+        control={control}
+        name={name}
+        render={({ field, fieldState }) => (
+          <FormItem className="gap-2 w-full">
+            <FormControl className="flex-1">
+              <CurrencyInput
+                value={field.value ?? 0}
+                onChange={field.onChange}
+                onBlur={field.onBlur}
+                disabled={disabled}
+                error={!!fieldState.error}
               />
             </FormControl>
             <FormMessage />

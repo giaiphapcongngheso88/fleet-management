@@ -1,9 +1,10 @@
 "use client";
 
-import { EntityListPage } from "@/components/master-data/EntityListPage";
-import { TextFormField } from "@/components/master-data/FormFields";
+import { EntityImportConfig, EntityListPage } from "@/components/master-data/EntityListPage";
+import { CurrencyFormField, TextFormField } from "@/components/master-data/FormFields";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { driverService } from "@/services/master-data";
 import { Driver } from "@/types/master-data";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -76,6 +77,34 @@ const columns: ColumnDef<Driver>[] = [
   },
 ];
 
+const IMPORT_COLUMNS: ImportColumn<Driver>[] = [
+  { key: "name", header: "Tên tài xế", required: true, example: "Nguyễn Văn A" },
+  { key: "phone", header: "Điện thoại", example: "0901234567" },
+  { key: "licenseNumber", header: "Số GPLX" },
+  { key: "citizenId", header: "Số CCCD" },
+  { key: "baseSalary", header: "Lương cơ bản", type: "number", example: 8000000 },
+];
+
+const importConfig: EntityImportConfig<Driver> = {
+  columns: IMPORT_COLUMNS,
+  sheetName: "Tài xế",
+  templateFileName: "mau-import-tai-xe.xlsx",
+  validateRow: async (raw) => {
+    const name = String(raw.name ?? "").trim();
+    return {
+      payload: {
+        name,
+        phone: String(raw.phone ?? "") || undefined,
+        licenseNumber: String(raw.licenseNumber ?? "") || undefined,
+        citizenId: String(raw.citizenId ?? "") || undefined,
+        baseSalary: (raw.baseSalary as number | undefined) ?? 0,
+        status: "ACTIVE",
+      },
+      errors: [],
+    };
+  },
+};
+
 export default function DriverPage() {
   return (
     <EntityListPage<Driver, FormValues>
@@ -94,6 +123,7 @@ export default function DriverPage() {
       })}
       buildCreatePayload={(v) => ({ ...v, status: "ACTIVE" })}
       buildUpdatePayload={(v) => ({ ...v })}
+      importConfig={importConfig}
       columns={columns}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">
@@ -101,7 +131,7 @@ export default function DriverPage() {
           <TextFormField control={form.control} name="phone" label="Điện thoại" />
           <TextFormField control={form.control} name="licenseNumber" label="Số GPLX" />
           <TextFormField control={form.control} name="citizenId" label="Số CCCD" />
-          <TextFormField control={form.control} name="baseSalary" label="Lương cơ bản" type="number" />
+          <CurrencyFormField control={form.control} name="baseSalary" label="Lương cơ bản" />
         </div>
       )}
     />

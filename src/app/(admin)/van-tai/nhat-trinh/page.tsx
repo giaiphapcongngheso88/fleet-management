@@ -56,7 +56,12 @@ export default function TripListPage() {
     void fetchData();
   }, [fetchData]);
 
-  const goToDetail = (trip: Trip) => router.push(`/van-tai/nhat-trinh/${trip.id}`);
+  // Hiện loading ngay lúc bấm, không tắt ở đây — trang đích tự tắt sau khi tải xong dữ liệu (hoặc
+  // tự dọn khi rời trang danh sách này), tránh khoảng trắng giữa lúc bấm và lúc trang đích render.
+  const goToDetail = (trip: Trip) => {
+    showLoading(ELoadingMessages.LOADING_DATA);
+    router.push(`/van-tai/nhat-trinh/${trip.id}`);
+  };
 
   const columns = useMemo<ColumnDef<Trip>[]>(
     () => [
@@ -81,6 +86,7 @@ export default function TripListPage() {
         id: "customerId",
         header: () => "Khách hàng",
         cell: ({ row }) => <div>{customerName(row.original.customerId)}</div>,
+        meta: { exportValue: (row) => customerName(row.customerId) },
       },
       {
         id: "route",
@@ -90,11 +96,13 @@ export default function TripListPage() {
             {locationName(row.original.pickupLocationId)} → {locationName(row.original.dropoffLocationId)}
           </div>
         ),
+        meta: { exportValue: (row) => `${locationName(row.pickupLocationId)} -> ${locationName(row.dropoffLocationId)}` },
       },
       {
         id: "vehicleId",
         header: () => "Xe",
         cell: ({ row }) => <div>{vehiclePlate(row.original.vehicleId)}</div>,
+        meta: { exportValue: (row) => vehiclePlate(row.vehicleId) },
       },
       {
         id: "revenue",
@@ -169,13 +177,22 @@ export default function TripListPage() {
             enablePaging
             enableColumnFilter
             enableGlobalFilter
+            enableExport
+            exportFileName="Chuyen-xe"
             onChange={setData}
             onRowClick={goToDetail}
           />
         </div>
         <div className="border-t p-2 flex justify-end shrink-0">
           {can("trip", "CREATE") && (
-            <Button variant="default" onClick={() => router.push("/van-tai/nhat-trinh/moi")} className="flex items-center gap-2">
+            <Button
+              variant="default"
+              onClick={() => {
+                showLoading(ELoadingMessages.LOADING_DATA);
+                router.push("/van-tai/nhat-trinh/moi");
+              }}
+              className="flex items-center gap-2"
+            >
               Thêm chuyến
             </Button>
           )}

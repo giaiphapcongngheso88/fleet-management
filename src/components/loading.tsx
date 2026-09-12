@@ -14,13 +14,12 @@ export function LoadingUI({
     return (
         <div
             className={cn(
-                "fixed inset-0 flex items-center justify-center !pointer-events-auto",
+                "fixed inset-0 flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
                 popupClass,
             )}
         >
-            <div className="flex items-center justify-center space-x-2 w-[250px] h-[60px] text-black bg-slate-100 border-2 border-[#ffcc00] rounded-md">
-                <p className=" text-black flex items-center">{message}...</p>
-            </div>
+            <div className="h-12 w-12 rounded-full border-4 border-white/30 border-t-white animate-spin" />
+            <p className="text-sm text-white">{message}...</p>
         </div>
     );
 }
@@ -35,16 +34,12 @@ const useLoading = () => {
         container.id = id;
         container.role = "status";
         container.className = cn(
-            "fixed inset-0 flex items-center justify-center !pointer-events-auto",
+            "fixed inset-0 flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
             popupClass || "z-110",
         );
         container.innerHTML = `
-      <div class="${cn(
-            "flex items-center justify-center space-x-2 w-[250px] h-[60px] text-black bg-slate-100 border-2 border-[#ffcc00] rounded-md",
-            isMultilineMessage && "whitespace-pre-line text-center",
-        )}">
-        <p class="text-black flex items-center">${message}...</p>
-      </div>
+      <div class="h-12 w-12 rounded-full border-4 border-white/30 border-t-white animate-spin"></div>
+      <p class="${cn("text-sm text-white", isMultilineMessage && "whitespace-pre-line text-center")}">${message}...</p>
     `;
         document.body.appendChild(container);
 

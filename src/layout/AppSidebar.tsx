@@ -1,4 +1,6 @@
 "use client";
+import { ELoadingMessages } from "@/app/lib/enums";
+import useLoading from "@/components/loading";
 import { usePermission } from "@/context/PermissionContext";
 import Image from "next/image";
 import Link from "next/link";
@@ -12,6 +14,7 @@ import {
   DollarLineIcon,
   GridIcon,
   HorizontaLDots,
+  PieChartIcon,
   TableIcon,
   TaskIcon,
   UserCircleIcon,
@@ -56,7 +59,10 @@ const navItems: NavItem[] = [
   {
     name: "Kinh doanh",
     icon: <TableIcon />,
-    subItems: [{ name: "Bảng giá vận chuyển", path: "/kinh-doanh/bang-gia", resource: "price" }],
+    subItems: [
+      { name: "Bảng giá vận chuyển", path: "/kinh-doanh/bang-gia", resource: "price" },
+      { name: "Báo giá", path: "/kinh-doanh/bao-gia", resource: "quote" },
+    ],
   },
   {
     name: "Tài chính",
@@ -75,11 +81,19 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    icon: <PieChartIcon />,
+    name: "Báo cáo",
+    path: "/bao-cao",
+    resource: "report",
+  },
+  {
     name: "Hệ thống",
     icon: <UserCircleIcon />,
     subItems: [
       { name: "Người dùng", path: "/he-thong/nguoi-dung", resource: "user" },
       { name: "Import Excel", path: "/he-thong/import-excel", resource: "import" },
+      { name: "Phân quyền", path: "/he-thong/phan-quyen", resource: "permission" },
+      { name: "Thông tin công ty", path: "/he-thong/thong-tin-cong-ty", resource: "permission" },
     ],
   },
 ];
@@ -90,6 +104,24 @@ const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const pathname = usePathname();
   const { can } = usePermission();
+  const { showLoading, hideLoading } = useLoading();
+  // Bấm menu điều hướng bằng <Link> (không qua router.push nào cả) nên không có chỗ nào tự nhiên gọi
+  // showLoading — trang đổi nhưng không có phản hồi tải cho tới khi trang đích tự fetch xong. Tự hiện
+  // loading ngay khi bấm, tự tắt khi pathname thực sự đổi (điều hướng xong), dùng mảng phòng trường hợp
+  // bấm liên tiếp nhiều link trước khi trang trước kịp chuyển.
+  const pendingNavLoadingIds = useRef<string[]>([]);
+
+  const onNavigate = (path: string) => {
+    if (path === pathname) return;
+    pendingNavLoadingIds.current.push(showLoading(ELoadingMessages.LOADING_DATA));
+  };
+
+  useEffect(() => {
+    if (pendingNavLoadingIds.current.length === 0) return;
+    pendingNavLoadingIds.current.forEach(hideLoading);
+    pendingNavLoadingIds.current = [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   const hasViewPermission = useCallback((resource: string | undefined) => (resource ? can(resource, "VIEW") : true), [can]);
 
@@ -141,7 +173,11 @@ const AppSidebar: React.FC = () => {
               </button>
             ) : (
               nav.path && (
-                <Link href={nav.path} className={`menu-item group ${isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"}`}>
+                <Link
+                  href={nav.path}
+                  onClick={() => onNavigate(nav.path as string)}
+                  className={`menu-item group ${isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"}`}
+                >
                   <span className={`${isActive(nav.path) ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>{nav.icon}</span>
                   {(isExpanded || isHovered || isMobileOpen) && <span className="menu-item-text">{nav.name}</span>}
                 </Link>
@@ -161,6 +197,7 @@ const AppSidebar: React.FC = () => {
                     <li key={subItem.name}>
                       <Link
                         href={subItem.path}
+                        onClick={() => onNavigate(subItem.path)}
                         className={`menu-dropdown-item ${isActive(subItem.path) ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"}`}
                       >
                         {subItem.name}
@@ -212,7 +249,7 @@ const AppSidebar: React.FC = () => {
 
   return (
     <aside
-      className={`fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
+      className={`print:hidden fixed mt-16 flex flex-col lg:mt-0 top-0 px-5 left-0 bg-white dark:bg-gray-900 dark:border-gray-800 text-gray-900 h-screen transition-all duration-300 ease-in-out z-50 border-r border-gray-200
         ${isExpanded || isMobileOpen ? "w-[290px]" : isHovered ? "w-[290px]" : "w-[90px]"}
         ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
         lg:translate-x-0`}

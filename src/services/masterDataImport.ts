@@ -23,6 +23,7 @@ export type ImportResult = {
   products: ImportCounters;
   prices: ImportCounters;
   costTypes: ImportCounters;
+  financeTransactions: ImportCounters;
   errors: string[];
 };
 
@@ -116,6 +117,7 @@ export async function importMasterData(
   const priceKeys = new Set(
     existingPrices.map((p) => [p.customerId, p.pickupLocationId, p.dropoffLocationId, p.productId].join("|"))
   );
+  const costTypeIdByName = new Map(existingCostTypes.map((c) => [normalizeKey(c.name), c.id]));
   const costTypeNameSeen = new Set(existingCostTypes.map((c) => normalizeKey(c.name)));
 
   const result: ImportResult = {
@@ -127,6 +129,7 @@ export async function importMasterData(
     products: { created: 0, skipped: 0 },
     prices: { created: 0, skipped: 0 },
     costTypes: { created: 0, skipped: 0 },
+    financeTransactions: { created: 0, skipped: 0 },
     errors,
   };
 
@@ -291,7 +294,7 @@ export async function importMasterData(
       continue;
     }
     costTypeNameSeen.add(key);
-    writer.prepare("cost_types", {
+    const id = writer.prepare("cost_types", {
       code: costType.code,
       name: costType.name,
       isFuel: costType.isFuel,
@@ -299,7 +302,26 @@ export async function importMasterData(
       isCashTransaction: costType.isCashTransaction,
       note: "Import từ Excel ĐẠI PHÁT 1.3",
     });
+    costTypeIdByName.set(key, id);
     result.costTypes.created++;
+  }
+
+  for (const transaction of parsed.financeTransactions) {
+    const costTypeId = costTypeIdByName.get(normalizeKey(transaction.costTypeName));
+    writer.prepare("finance_transactions", {
+      transactionNo: `IMP-${transaction.transactionDate.replace(/[^0-9]/g, "")}-${result.financeTransactions.created + 1}`,
+      transactionDate: transaction.transactionDate,
+      type: transaction.type,
+      costTypeId: costTypeId ?? "",
+      objectType: "OTHER",
+      objectId: "",
+      amount: transaction.amount,
+      paymentMethod: "OTHER",
+      description: transaction.description
+        ? `${transaction.costTypeName}: ${transaction.description}`
+        : transaction.costTypeName,
+    });
+    result.financeTransactions.created++;
   }
 
   onProgress?.("Đang ghi dữ liệu lên Firestore...");

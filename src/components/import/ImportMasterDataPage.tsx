@@ -14,6 +14,7 @@ import { importMasterData, ImportResult } from "@/services/masterDataImport";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { CANH_BAO } from "@/utils/enums";
 import { useState } from "react";
+import { Upload } from "lucide-react";
 
 const ENTITY_LABELS: { key: keyof ParseResult; label: string }[] = [
   { key: "customers", label: "Khách hàng" },
@@ -24,6 +25,7 @@ const ENTITY_LABELS: { key: keyof ParseResult; label: string }[] = [
   { key: "products", label: "Hàng hóa" },
   { key: "prices", label: "Bảng giá vận chuyển" },
   { key: "costTypes", label: "Loại chi phí" },
+  { key: "financeTransactions", label: "Phiếu thu / chi" },
 ];
 
 export default function ImportMasterDataPage() {
@@ -122,19 +124,26 @@ export default function ImportMasterDataPage() {
     <div className="flex flex-col gap-4 overflow-y-auto pb-6">
       <div className="rounded-lg border border-gray-200 p-4 dark:border-gray-800">
         <p className="mb-3 text-sm text-gray-600 dark:text-gray-400">
-          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc 4 sheet: <b>Khách hàng</b>, <b>DS XE</b> (xe / tài xế / ĐV
+          Chọn file Excel nghiệp vụ (ĐẠI PHÁT 1.3). Hệ thống đọc đầy đủ dữ liệu từ các sheet: <b>Khách hàng</b>, <b>DS XE</b> (xe / tài xế / ĐV
           vận tải), <b>DS KH,Nâng,Hạ</b> (điểm nâng hạ / hàng hóa / bảng giá), <b>Thu - Chi</b> (loại chi phí, lấy theo tên
           cột). Dữ liệu sẽ được xem trước, chỉ ghi vào hệ thống khi bạn xác nhận.
         </p>
         <div className="flex flex-wrap items-end gap-4">
-          <div>
+          <div className="flex flex-col gap-1">
             <Label>File Excel</Label>
             <input
+              id="excel-file-input"
               type="file"
               accept=".xlsx,.xlsm"
               onChange={onSelectFile}
-              className="block text-sm text-gray-700 dark:text-gray-300"
+              className="sr-only"
             />
+            <Button asChild type="button" size="lg" className="w-fit cursor-pointer bg-primary text-primary-foreground hover:bg-primary/90">
+              <label htmlFor="excel-file-input">
+                <Upload className="h-4 w-4" />
+                Chọn file Excel
+              </label>
+            </Button>
           </div>
           <div>
             <Label>Bảng giá có hiệu lực từ ngày</Label>

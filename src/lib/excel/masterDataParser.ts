@@ -55,6 +55,14 @@ export type ParsedCostType = {
   isCashTransaction: boolean;
 };
 
+export type ParsedFinanceTransaction = {
+  transactionDate: string;
+  type: "RECEIPT" | "PAYMENT";
+  costTypeName: string;
+  amount: number;
+  description: string;
+};
+
 export type ParseResult = {
   customers: ParsedCustomer[];
   vendors: ParsedVendor[];
@@ -64,6 +72,7 @@ export type ParseResult = {
   products: ParsedProduct[];
   prices: ParsedPrice[];
   costTypes: ParsedCostType[];
+  financeTransactions: ParsedFinanceTransaction[];
   warnings: string[];
 };
 
@@ -105,12 +114,18 @@ const KNOWN_COST_TYPE_FLAGS: Record<string, { isFuel?: boolean; isTripCost?: boo
 };
 
 /** Tiêu đề không phải tên loại chi phí (cột ngày/đối tượng/ghi chú, hoặc ô trống mặc định của Excel). */
-const NON_COST_TYPE_HEADERS = new Set(["date", "danh sách", "nội dung", ""]);
+const NON_COST_TYPE_HEADERS = new Set(["date", "ngày", "danh sách", "đối tượng", "nội dung", "diễn giải", "ghi chú", ""]);
 
 type CellValue = ExcelJS.CellValue;
 
 function text(value: CellValue): string {
   if (value == null) return "";
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
   if (typeof value === "object") {
     if ("richText" in value && Array.isArray(value.richText)) {
       return value.richText.map((t) => t.text).join("").trim();
@@ -349,12 +364,15 @@ export async function parseMasterDataWorkbook(
 
   // ---- Loại chi phí (tiêu đề cột của sheet Thu - Chi, mỗi cột = 1 loại) ----
   const costTypeMap = new Map<string, ParsedCostType>();
+  const financeTransactions: ParsedFinanceTransaction[] = [];
   if (financeSheet) {
     const headerRow = financeSheet.getRow(2);
+    const costHeaders = new Map<number, string>();
     for (let c = 1; c <= financeSheet.columnCount; c++) {
       const rawName = text(headerRow.getCell(c).value);
       const key = normalizeKey(rawName);
       if (!rawName || NON_COST_TYPE_HEADERS.has(key) || /^column\d+$/.test(key)) continue;
+      costHeaders.set(c, rawName);
       if (costTypeMap.has(key)) continue;
       const flags = KNOWN_COST_TYPE_FLAGS[key] ?? { isTripCost: true };
       costTypeMap.set(key, {
@@ -364,6 +382,23 @@ export async function parseMasterDataWorkbook(
         isTripCost: flags.isTripCost ?? false,
         isCashTransaction: flags.isCashTransaction ?? false,
       });
+    }
+
+    // Mẫu 1.3 lưu phát sinh theo ma trận: cột ngày, đối tượng/diễn giải,
+    // các cột còn lại là từng loại thu/chi. Mỗi ô số là một phiếu riêng.
+    for (let r = 3; r <= financeSheet.rowCount; r++) {
+      const row = financeSheet.getRow(r);
+      const transactionDate = text(row.getCell(1).value);
+      if (!transactionDate) continue;
+      const description = text(row.getCell(2).value);
+      for (const [column, costTypeName] of costHeaders) {
+        const amount = num(row.getCell(column).value);
+        if (amount === 0) continue;
+        const key = normalizeKey(costTypeName);
+        const type: "RECEIPT" | "PAYMENT" =
+          key.includes("thu tiền") || key.includes("thu ") || key === "nộp tiền" ? "RECEIPT" : "PAYMENT";
+        financeTransactions.push({ transactionDate, type, costTypeName, amount, description });
+      }
     }
   }
   // Loại chi phí chỉ xuất hiện ở cột chi phí của sheet Nhật Trình (mục 8), không có trong Thu - Chi.
@@ -389,6 +424,7 @@ export async function parseMasterDataWorkbook(
     products: [...productMap.values()],
     prices,
     costTypes: [...costTypeMap.values()],
+    financeTransactions,
     warnings,
   };
 }

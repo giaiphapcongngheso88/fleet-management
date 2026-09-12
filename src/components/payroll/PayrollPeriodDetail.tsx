@@ -12,15 +12,17 @@ import { Textarea } from "@/components/ui/textarea";
 import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
 import { useReferenceData } from "@/hooks/useReferenceData";
-import { driverService } from "@/services/master-data";
+import { driverService, locationService } from "@/services/master-data";
+import { tripService } from "@/services/trip";
 import {
   calculatePayrollPeriodItems,
   computePayrollItemNet,
   computePayrollPeriodTotals,
   payrollPeriodService,
 } from "@/services/payroll";
-import { Driver } from "@/types/master-data";
+import { Driver, Location } from "@/types/master-data";
 import { PayrollItem, PayrollPeriod } from "@/types/payroll";
+import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -40,12 +42,14 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
   const [loadingPeriod, setLoadingPeriod] = useState(true);
   const [showUnlockBox, setShowUnlockBox] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
+  const [trips, setTrips] = useState<Trip[]>([]);
 
   const drivers = useReferenceData<Driver>(() => driverService.getAll(), "tài xế");
+  const locations = useReferenceData<Location>(() => locationService.getAll(), "điểm nâng/hạ");
 
   const fetchPeriod = async () => {
     try {
-      const p = await payrollPeriodService.getById(periodId);
+      const [p, allTrips] = await Promise.all([payrollPeriodService.getById(periodId), tripService.getAll()]);
       if (!p) {
         await alert({ title: "Lỗi", content: "Không tìm thấy kỳ lương này" });
         router.push("/tai-chinh/luong-tai-xe");
@@ -53,6 +57,7 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
       }
       setPeriod(p);
       setItems(p.items);
+      setTrips(allTrips);
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Tải kỳ lương thất bại: " + getErrorMessage(err) });
     } finally {
@@ -77,6 +82,8 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
 
   const driverOptions = drivers.map((d) => ({ value: d.id, label: d.name }));
   const driverName = (id: string) => drivers.find((d) => d.id === id)?.name ?? id;
+  const locationName = (id: string) => locations.find((location) => location.id === id)?.name ?? id;
+  const tripById = useMemo(() => new Map(trips.map((trip) => [trip.id, trip])), [trips]);
 
   const isLocked = period?.status === "LOCKED" || period?.status === "PAID";
   const canUpdate = can("payroll", "UPDATE") && !isLocked;
@@ -326,6 +333,38 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
                   {currencyFormatter.format(item.netAmount)}
                 </p>
               </div>
+              {item.tripIds.length > 0 && (
+                <div className="mt-1 overflow-x-auto sm:col-span-6">
+                  <table className="w-full min-w-[560px] text-left text-xs">
+                    <thead className="border-b text-gray-500">
+                      <tr>
+                        <th className="px-2 py-1.5 font-medium">STT</th>
+                        <th className="px-2 py-1.5 font-medium">Ngày</th>
+                        <th className="px-2 py-1.5 font-medium">Mã chuyến</th>
+                        <th className="px-2 py-1.5 font-medium">Tuyến</th>
+                        <th className="px-2 py-1.5 text-right font-medium">Lương chuyến</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {item.tripIds.map((tripId, tripIndex) => {
+                        const trip = tripById.get(tripId);
+                        if (!trip) return null;
+                        return (
+                          <tr key={trip.id} className="border-b last:border-b-0">
+                            <td className="px-2 py-1.5">{tripIndex + 1}</td>
+                            <td className="px-2 py-1.5">{trip.tripDate}</td>
+                            <td className="px-2 py-1.5">{trip.tripCode}</td>
+                            <td className="px-2 py-1.5">
+                              {locationName(trip.pickupLocationId)} → {locationName(trip.dropoffLocationId)}
+                            </td>
+                            <td className="px-2 py-1.5 text-right">{currencyFormatter.format(trip.driverTripSalary || 0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           ))}
         </div>

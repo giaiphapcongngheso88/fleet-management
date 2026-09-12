@@ -17,7 +17,8 @@ import { Customer, Location, Vehicle } from "@/types/master-data";
 import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
-import { Edit } from "lucide-react";
+import ExcelJS from "exceljs";
+import { Download, Edit } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -38,6 +39,52 @@ export default function TripListPage() {
   const customerName = (id: string) => customers.find((c) => c.id === id)?.name ?? "";
   const locationName = (id: string) => locations.find((l) => l.id === id)?.name ?? "";
   const vehiclePlate = (id: string) => vehicles.find((v) => v.id === id)?.licensePlate ?? "";
+
+  const exportExcel = async () => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("BẢNG KÊ CHI TIẾT");
+    worksheet.mergeCells("A1:J1");
+    worksheet.getCell("A1").value = "BẢNG KÊ CHI TIẾT";
+    worksheet.getCell("A1").font = { bold: true, size: 14 };
+    worksheet.getCell("A1").alignment = { horizontal: "center" };
+    worksheet.mergeCells("A2:J2");
+    worksheet.getCell("A2").value = `Từ ngày ${dateRange.from} đến ngày ${dateRange.to}`;
+    worksheet.getCell("A2").alignment = { horizontal: "center" };
+    worksheet.addRow([]);
+    worksheet.addRow(["STT", "Mã chuyến", "Ngày", "Khách hàng", "Tuyến", "Xe", "Doanh thu", "Lợi nhuận", "Chênh lệch dầu", "Trạng thái"]);
+    const header = worksheet.getRow(4);
+    header.font = { bold: true };
+    header.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    filteredData.forEach((trip, index) => {
+      worksheet.addRow([
+        index + 1,
+        trip.tripCode,
+        trip.tripDate,
+        customerName(trip.customerId),
+        `${locationName(trip.pickupLocationId)} → ${locationName(trip.dropoffLocationId)}`,
+        vehiclePlate(trip.vehicleId),
+        trip.revenue ?? 0,
+        trip.profit ?? 0,
+        trip.fuelVarianceAmount ?? 0,
+        trip.status,
+      ]);
+    });
+    worksheet.columns = [
+      { width: 8 }, { width: 16 }, { width: 14 }, { width: 24 }, { width: 36 },
+      { width: 16 }, { width: 16 }, { width: 16 }, { width: 18 }, { width: 18 },
+    ];
+    [7, 8, 9].forEach((column) => {
+      worksheet.getColumn(column).numFmt = '#,##0';
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `bang-ke-chi-tiet-${dateRange.from}-${dateRange.to}.xlsx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
 
   const fetchData = useCallback(async () => {
     const loadingId = showLoading(ELoadingMessages.LOADING_DATA);
@@ -155,7 +202,12 @@ export default function TripListPage() {
     <div className="flex flex-col flex-1 min-h-0 w-full rounded-2xl border border-gray-200 bg-white px-2 overflow-hidden dark:border-gray-800 dark:bg-white/[0.03]">
       <div className="shrink-0 mb-2 mt-2 flex items-center justify-between gap-2">
         <h3 className="truncate text-sm font-semibold text-gray-800 dark:text-white/90">Nhật trình / Chuyến xe</h3>
-        <div className="shrink-0">
+        <div className="flex shrink-0 items-center gap-2">
+          {can("trip", "EXPORT") && (
+            <Button type="button" variant="outline" size="sm" onClick={() => void exportExcel()} className="flex items-center gap-1.5">
+              <Download className="h-3.5 w-3.5" /> Xuất Excel
+            </Button>
+          )}
           <DateRangeFilter value={dateRange} onChange={setDateRange} />
         </div>
       </div>

@@ -46,6 +46,8 @@ export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldVa
   dialogClassName?: string;
   /** Nội dung tùy chọn (vd: thẻ tổng hợp Tổng thu/Tổng chi/Số dư) hiển thị phía trên bảng. */
   renderExtra?: (data: T[]) => ReactNode;
+  /** Footer tùy chọn cho biểu mẫu chứng từ (không hiển thị với các danh mục thông thường). */
+  renderFormFooter?: (mode: "create" | "update") => ReactNode;
   /**
    * Lọc dữ liệu trước khi hiển thị (vd: bộ lọc khoảng ngày, mục 44.1) — áp dụng cho cả bảng lẫn
    * renderExtra để số tổng hợp khớp đúng dữ liệu đang lọc. Không set = hiển thị nguyên toàn bộ
@@ -69,6 +71,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
   dialogClassName,
   renderExtra,
   dataFilter,
+  renderFormFooter,
 }: EntityListPageProps<T, TForm>) {
   const [data, setData] = useState<T[]>([]);
   const [editing, setEditing] = useState<T | null>(null);
@@ -243,6 +246,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
                 <ErrorBoundary label={`form ${entityLabel.toLowerCase()}`}>{renderForm(form, mode)}</ErrorBoundary>
+                {renderFormFooter?.(mode)}
                 <div className="flex justify-end mt-4 w-full">
                   <Button variant="default" type="submit" className="flex items-center gap-2">
                     Lưu

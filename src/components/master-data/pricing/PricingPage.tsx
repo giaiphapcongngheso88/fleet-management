@@ -180,6 +180,18 @@ export default function PricingPage() {
         return null;
       }}
       columns={columns}
+      renderFormFooter={() => (
+        <div className="mt-5 grid grid-cols-2 gap-8 border-t pt-4 text-center text-sm text-gray-700">
+          <div>
+            <p>Người lập báo giá</p>
+            <p className="mt-12">(Ký, ghi rõ họ tên)</p>
+          </div>
+          <div>
+            <p className="font-semibold">GIÁM ĐỐC</p>
+            <p className="mt-12">(Ký, ghi rõ họ tên)</p>
+          </div>
+        </div>
+      )}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">
           <SelectFormField control={form.control} name="customerId" label="Khách hàng" options={customerOptions} placeholder="Chọn khách hàng" required />

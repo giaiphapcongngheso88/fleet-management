@@ -66,6 +66,8 @@ export interface EntityListPageProps<T extends BaseEntity, TForm extends FieldVa
   dialogClassName?: string;
   /** Nội dung tùy chọn (vd: thẻ tổng hợp Tổng thu/Tổng chi/Số dư) hiển thị phía trên bảng. */
   renderExtra?: (data: T[]) => ReactNode;
+  /** Footer tùy chọn cho biểu mẫu chứng từ. */
+  renderFormFooter?: (mode: "create" | "update") => ReactNode;
   /**
    * Lọc dữ liệu trước khi hiển thị (vd: bộ lọc khoảng ngày, mục 44.1) — áp dụng cho cả bảng lẫn
    * renderExtra để số tổng hợp khớp đúng dữ liệu đang lọc. Không set = hiển thị nguyên toàn bộ
@@ -95,6 +97,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
   renderExtra,
   dataFilter,
   extraRowActions,
+  renderFormFooter,
 }: EntityListPageProps<T, TForm>) {
   const [data, setData] = useState<T[]>([]);
   const [editing, setEditing] = useState<T | null>(null);
@@ -324,6 +327,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
                 <fieldset disabled={viewOnly} className="contents">
                   <ErrorBoundary label={`form ${entityLabel.toLowerCase()}`}>{renderForm(form, mode)}</ErrorBoundary>
                 </fieldset>
+                {!viewOnly && renderFormFooter?.(mode)}
                 <div className="flex justify-end mt-4 w-full">
                   {viewOnly ? (
                     <Button type="button" variant="outline" onClick={closeModal}>

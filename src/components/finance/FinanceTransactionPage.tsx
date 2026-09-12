@@ -1,13 +1,16 @@
 "use client";
 
-import { DateFormField, SelectFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
+import { CurrencyFormField, DateFormField, SelectFormField, TextAreaFormField } from "@/components/master-data/FormFields";
 import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { RowAction } from "@/components/common/RowActionsMenu";
+import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeader";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import { DateRange, DateRangeFilter } from "@/components/common/DateRangeFilter";
 import Badge from "@/components/ui/badge/Badge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
 import { costTypeService, customerService, driverService, vendorService } from "@/services/master-data";
 import { financeTransactionService, generateTransactionNo, getFinanceSummary } from "@/services/finance";
+import { useCompanyInfo } from "@/hooks/useCompanyInfo";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { getCurrentMonthRange } from "@/utils/dateRange";
 import { CostType } from "@/types/cost-type";
@@ -23,7 +26,8 @@ import {
 } from "@/types/finance";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { useMemo, useState } from "react";
+import { Printer } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -71,8 +75,17 @@ const defaultValues: FormValues = {
 
 const currencyFormatter = new Intl.NumberFormat("vi-VN");
 
+const PARTY_LABEL_BY_OBJECT_TYPE: Record<TransactionObjectType, string> = {
+  CUSTOMER: "Xác nhận của khách hàng",
+  VENDOR: "Xác nhận của đơn vị vận tải",
+  DRIVER: "Xác nhận của tài xế",
+  OTHER: "Xác nhận của người nộp/nhận tiền",
+};
+
 export default function FinanceTransactionPage({ title }: { title?: string }) {
+  const company = useCompanyInfo();
   const [dateRange, setDateRange] = useState<DateRange>(getCurrentMonthRange());
+  const [printingTransaction, setPrintingTransaction] = useState<FinanceTransaction | null>(null);
   const customers = useReferenceData<Customer>(() => customerService.getAll(), "khách hàng");
   const vendors = useReferenceData<Vendor>(() => vendorService.getAll(), "đơn vị vận tải");
   const drivers = useReferenceData<Driver>(() => driverService.getAll(), "tài xế");
@@ -85,6 +98,19 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
     if (objectType === "DRIVER") return drivers.find((d) => d.id === objectId)?.name ?? "";
     return "";
   };
+
+  // In phiếu (mục 36) — chờ 1 khung hình để nội dung in ẩn kịp render đúng phiếu vừa chọn rồi mới in,
+  // tự dọn state sau khi hộp thoại in đóng lại (dù người dùng in hay hủy) để lần bấm sau luôn đúng.
+  useEffect(() => {
+    if (!printingTransaction) return;
+    const raf = requestAnimationFrame(() => window.print());
+    const onAfterPrint = () => setPrintingTransaction(null);
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printingTransaction]);
 
   const customerOptions = customers.map((c) => ({ value: c.id, label: `${c.code} - ${c.name}` }));
   const vendorOptions = vendors.map((v) => ({ value: v.id, label: `${v.code} - ${v.name}` }));
@@ -121,11 +147,13 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
             {TRANSACTION_TYPE_LABEL[row.original.type]}
           </Badge>
         ),
+        meta: { exportValue: (row) => TRANSACTION_TYPE_LABEL[row.type] },
       },
       {
         id: "object",
         header: () => "Đối tượng",
         cell: ({ row }) => <div>{objectName(row.original.objectType, row.original.objectId)}</div>,
+        meta: { exportValue: (row) => objectName(row.objectType, row.objectId) },
       },
       {
         id: "amount",
@@ -137,6 +165,7 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
         id: "paymentMethod",
         header: () => "Phương thức",
         cell: ({ row }) => <div>{PAYMENT_METHOD_LABEL[row.original.paymentMethod]}</div>,
+        meta: { exportValue: (row) => PAYMENT_METHOD_LABEL[row.paymentMethod] },
       },
       {
         id: "status",
@@ -150,10 +179,51 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
   );
 
   return (
+    <>
+      {printingTransaction && (
+        <div className="hidden print:block">
+          <PrintHeader title={printingTransaction.type === "RECEIPT" ? "Phiếu thu" : "Phiếu chi"} company={company} />
+          <table className="w-full text-sm border-collapse">
+            <tbody>
+              <tr>
+                <td className="py-1 px-2 font-semibold w-1/3">Số phiếu</td>
+                <td className="py-1 px-2">{printingTransaction.transactionNo}</td>
+              </tr>
+              <tr>
+                <td className="py-1 px-2 font-semibold">Ngày</td>
+                <td className="py-1 px-2">{printingTransaction.transactionDate}</td>
+              </tr>
+              <tr>
+                <td className="py-1 px-2 font-semibold">{TRANSACTION_OBJECT_TYPE_LABEL[printingTransaction.objectType]}</td>
+                <td className="py-1 px-2">{objectName(printingTransaction.objectType, printingTransaction.objectId)}</td>
+              </tr>
+              <tr>
+                <td className="py-1 px-2 font-semibold">Số tiền</td>
+                <td className="py-1 px-2 font-semibold">{currencyFormatter.format(printingTransaction.amount)}</td>
+              </tr>
+              <tr>
+                <td className="py-1 px-2 font-semibold">Phương thức</td>
+                <td className="py-1 px-2">{PAYMENT_METHOD_LABEL[printingTransaction.paymentMethod]}</td>
+              </tr>
+              {printingTransaction.description && (
+                <tr>
+                  <td className="py-1 px-2 font-semibold">Nội dung</td>
+                  <td className="py-1 px-2">{printingTransaction.description}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <PrintSignatureBlock partyLabel={PARTY_LABEL_BY_OBJECT_TYPE[printingTransaction.objectType]} company={company} />
+        </div>
+      )}
+
     <EntityListPage<FinanceTransaction, FormValues>
       resourceKey="finance"
       entityLabel="Phiếu thu / chi"
       service={financeTransactionService}
+      extraRowActions={(item) => [
+        { key: "print", label: "In phiếu", icon: <Printer className="h-4 w-4 text-gray-500" />, onSelect: () => setPrintingTransaction(item) } as RowAction,
+      ]}
       resolver={zodResolver(schema)}
       defaultValues={defaultValues}
       dialogClassName="bg-white min-w-[640px] flex flex-col justify-between p-4"
@@ -261,7 +331,7 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
               options={costTypeOptions}
               placeholder="Chọn loại thu/chi (tùy chọn)"
             />
-            <TextFormField control={form.control} name="amount" label="Số tiền" type="number" required />
+            <CurrencyFormField control={form.control} name="amount" label="Số tiền" required />
             <SelectFormField control={form.control} name="paymentMethod" label="Phương thức" options={PAYMENT_METHOD_OPTIONS} required />
             <TextAreaFormField control={form.control} name="description" label="Nội dung" className="col-span-2" />
             <TextAreaFormField control={form.control} name="note" label="Ghi chú" className="col-span-2" />
@@ -269,5 +339,6 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
         );
       }}
     />
+    </>
   );
 }

@@ -96,6 +96,10 @@ export function MultiSelect({
         );
         setSelectAll(isSelectedAll);
         setValue(newValue);
+        // Báo cho cha ngay khi tick/bỏ tick — không chờ đóng popover mới gọi onChange, tránh trường
+        // hợp bấm 1 nút hành động khác (vd "Tính lương") ngay khi popover còn mở mà cha vẫn thấy giá
+        // trị cũ (đã gặp bug: chọn lại 1 tài xế rồi bấm "Tính lương" ngay nhưng vẫn tính cho tất cả).
+        onChange?.(newValue);
     };
 
     const selectedLabel = useMemo(() => {
@@ -106,11 +110,9 @@ export function MultiSelect({
 
     const onSelectChange = (newValue: boolean) => {
         setSelectAll(newValue);
-        if (newValue) {
-            setValue(allOptionValues);
-        } else {
-            setValue([]);
-        }
+        const next = newValue ? allOptionValues : [];
+        setValue(next);
+        onChange?.(next);
     };
     return (
         <Popover open={open} onOpenChange={handleOpenChange}>

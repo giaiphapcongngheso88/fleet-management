@@ -1,9 +1,10 @@
 "use client";
 
-import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { EntityImportConfig, EntityListPage } from "@/components/master-data/EntityListPage";
 import { TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { vendorService } from "@/services/master-data";
 import { Vendor } from "@/types/master-data";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -67,6 +68,41 @@ const columns: ColumnDef<Vendor>[] = [
   },
 ];
 
+const IMPORT_COLUMNS: ImportColumn<Vendor>[] = [
+  { key: "code", header: "Mã ĐV vận tải", required: true, example: "NCC001" },
+  { key: "name", header: "Tên đơn vị", required: true, example: "Công ty vận tải XYZ" },
+  { key: "taxCode", header: "Mã số thuế", example: "0123456789" },
+  { key: "phone", header: "Điện thoại", example: "0901234567" },
+  { key: "address", header: "Địa chỉ" },
+];
+
+const importConfig: EntityImportConfig<Vendor> = {
+  columns: IMPORT_COLUMNS,
+  sheetName: "Đơn vị vận tải",
+  templateFileName: "mau-import-don-vi-van-tai.xlsx",
+  validateRow: async (raw, rowsSoFar, existingData) => {
+    const code = String(raw.code ?? "").trim();
+    const name = String(raw.name ?? "").trim();
+    const errors: string[] = [];
+    if (code) {
+      if (existingData.some((v) => v.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" đã tồn tại trong hệ thống`);
+      else if (rowsSoFar.some((v) => v.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" bị trùng trong file`);
+    }
+    if (errors.length > 0) return { errors };
+    return {
+      payload: {
+        code,
+        name,
+        taxCode: String(raw.taxCode ?? "") || undefined,
+        phone: String(raw.phone ?? "") || undefined,
+        address: String(raw.address ?? "") || undefined,
+        status: "ACTIVE",
+      },
+      errors: [],
+    };
+  },
+};
+
 export default function VendorPage() {
   return (
     <EntityListPage<Vendor, FormValues>
@@ -89,6 +125,7 @@ export default function VendorPage() {
         const dup = await vendorService.existsByField("code", values.code, editingId);
         return dup ? "Mã đơn vị vận tải đã tồn tại" : null;
       }}
+      importConfig={importConfig}
       columns={columns}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">

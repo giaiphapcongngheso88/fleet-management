@@ -2,28 +2,34 @@
 
 import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
+import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeader";
 import useLoading from "@/components/loading";
 import { PayrollStatusBadge } from "@/components/payroll/PayrollStatusBadge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MultiSelect } from "@/components/ui/select/multi-select";
 import { Textarea } from "@/components/ui/textarea";
 import { useCurrentUser } from "@/context/CurrentUserContext";
 import { usePermission } from "@/context/PermissionContext";
+import { useCompanyInfo } from "@/hooks/useCompanyInfo";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { driverService, locationService } from "@/services/master-data";
-import { tripService } from "@/services/trip";
 import {
   calculatePayrollPeriodItems,
   computePayrollItemNet,
   computePayrollPeriodTotals,
   payrollPeriodService,
 } from "@/services/payroll";
+import { tripService } from "@/services/trip";
+import { exportPayrollPeriodToExcel } from "@/lib/excel/payrollExport";
 import { Driver, Location } from "@/types/master-data";
 import { PayrollItem, PayrollPeriod } from "@/types/payroll";
 import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
+import { Download, Printer } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -35,6 +41,7 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
   const { showLoading, hideLoading } = useLoading();
   const { can } = usePermission();
   const { user } = useCurrentUser();
+  const company = useCompanyInfo();
 
   const [period, setPeriod] = useState<PayrollPeriod | null>(null);
   const [items, setItems] = useState<PayrollItem[]>([]);
@@ -42,14 +49,77 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
   const [loadingPeriod, setLoadingPeriod] = useState(true);
   const [showUnlockBox, setShowUnlockBox] = useState(false);
   const [unlockReason, setUnlockReason] = useState("");
-  const [trips, setTrips] = useState<Trip[]>([]);
+  const [tripsById, setTripsById] = useState<Record<string, Trip>>({});
+  const [printingDriverId, setPrintingDriverId] = useState<string | null>(null);
+  // Bỏ tick 1 tài xế = loại tài xế đó khỏi "In bảng lương"/"Xuất Excel" cả kỳ (không tính vào tổng
+  // tiền in/xuất) — mặc định tick hết (Set rỗng = không loại ai), không ảnh hưởng khi in riêng 1
+  // phiếu ("In phiếu" từng dòng vẫn luôn in đúng tài xế đó bất kể tick/bỏ tick ở đây).
+  const [excludedFromPrint, setExcludedFromPrint] = useState<Set<string>>(new Set());
+  const [expandedDriverIds, setExpandedDriverIds] = useState<Set<string>>(new Set());
+
+  const toggleExcludedFromPrint = (driverId: string, checked: boolean) => {
+    setExcludedFromPrint((prev) => {
+      const next = new Set(prev);
+      if (checked) next.delete(driverId);
+      else next.add(driverId);
+      return next;
+    });
+  };
+
+  const toggleExpanded = (driverId: string) => {
+    setExpandedDriverIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(driverId)) next.delete(driverId);
+      else next.add(driverId);
+      return next;
+    });
+  };
 
   const drivers = useReferenceData<Driver>(() => driverService.getAll(), "tài xế");
   const locations = useReferenceData<Location>(() => locationService.getAll(), "điểm nâng/hạ");
+  const locationName = (id: string) => locations.find((l) => l.id === id)?.name ?? id;
+  const routeName = (trip: Trip) => `${locationName(trip.pickupLocationId)} → ${locationName(trip.dropoffLocationId)}`;
+
+  // In riêng phiếu lương 1 tài xế — đợi 1 khung hình để bản in ẩn kịp lọc đúng tài xế rồi mới in,
+  // tự bỏ chọn sau khi hộp thoại in đóng (in xong hay hủy) để lần "In bảng lương" (cả kỳ) sau đó không
+  // bị dính nhầm chỉ còn 1 tài xế.
+  useEffect(() => {
+    if (!printingDriverId) return;
+    const raf = requestAnimationFrame(() => window.print());
+    const onAfterPrint = () => setPrintingDriverId(null);
+    window.addEventListener("afterprint", onAfterPrint);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("afterprint", onAfterPrint);
+    };
+  }, [printingDriverId]);
+
+  // Tải chi tiết từng chuyến đã tính vào lương (mã chuyến, ngày, lương chuyến) để in kèm cách tính,
+  // không chỉ hiện tổng "Lương chuyến" 1 dòng — chỉ tải các chuyến chưa có sẵn, tránh gọi lại thừa.
+  useEffect(() => {
+    const missingIds = Array.from(new Set(items.flatMap((i) => i.tripIds))).filter((id) => !tripsById[id]);
+    if (missingIds.length === 0) return;
+    void (async () => {
+      const fetched = await Promise.all(missingIds.map((id) => tripService.getById(id)));
+      setTripsById((prev) => {
+        const next = { ...prev };
+        fetched.forEach((trip, idx) => {
+          if (trip) next[missingIds[idx]] = trip;
+        });
+        return next;
+      });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items]);
 
   const fetchPeriod = async () => {
+    // showLoading/hideLoading ở đây có thể lồng với vòng loading riêng của onLock/onMarkPaid/
+    // onConfirmUnlock (những nơi đó cũng bọc showLoading quanh cả thao tác lẫn lần gọi fetchPeriod
+    // này) — vô hại vì cùng 1 overlay toàn màn hình giống hệt nhau, và đây là chỗ DUY NHẤT xử lý lần
+    // tải đầu tiên khi mới vào trang (trước đây không hiện loading, trang trắng trong lúc chờ).
+    const loadingId = showLoading(ELoadingMessages.LOADING_DATA);
     try {
-      const [p, allTrips] = await Promise.all([payrollPeriodService.getById(periodId), tripService.getAll()]);
+      const p = await payrollPeriodService.getById(periodId);
       if (!p) {
         await alert({ title: "Lỗi", content: "Không tìm thấy kỳ lương này" });
         router.push("/tai-chinh/luong-tai-xe");
@@ -57,10 +127,10 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
       }
       setPeriod(p);
       setItems(p.items);
-      setTrips(allTrips);
     } catch (err: unknown) {
       await alert({ title: "Lỗi", content: "Tải kỳ lương thất bại: " + getErrorMessage(err) });
     } finally {
+      hideLoading(loadingId);
       setLoadingPeriod(false);
     }
   };
@@ -82,8 +152,6 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
 
   const driverOptions = drivers.map((d) => ({ value: d.id, label: d.name }));
   const driverName = (id: string) => drivers.find((d) => d.id === id)?.name ?? id;
-  const locationName = (id: string) => locations.find((location) => location.id === id)?.name ?? id;
-  const tripById = useMemo(() => new Map(trips.map((trip) => [trip.id, trip])), [trips]);
 
   const isLocked = period?.status === "LOCKED" || period?.status === "PAID";
   const canUpdate = can("payroll", "UPDATE") && !isLocked;
@@ -91,6 +159,10 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
   const canUnlock = can("payroll", "UNLOCK");
 
   const totals = useMemo(() => computePayrollPeriodTotals(items), [items]);
+  const printItems = printingDriverId
+    ? items.filter((i) => i.driverId === printingDriverId)
+    : items.filter((i) => !excludedFromPrint.has(i.driverId));
+  const printTotals = useMemo(() => computePayrollPeriodTotals(printItems), [printItems]);
 
   const updateRow = (driverId: string, patch: Partial<Pick<PayrollItem, "baseSalary" | "adjustment" | "adjustmentNote">>) => {
     setItems((prev) =>
@@ -218,10 +290,114 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
     }
   };
 
+  const onExportExcel = async (onlyDriverId?: string) => {
+    if (!period) return;
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      // Xuất Excel cả kỳ (không chọn riêng 1 tài xế) tôn trọng đúng ô tick loại tài xế như "In bảng
+      // lương" — cùng 1 khái niệm phạm vi, tránh 2 nút ra 2 kết quả khác nhau khó hiểu.
+      const scopedItems = onlyDriverId ? items : items.filter((i) => !excludedFromPrint.has(i.driverId));
+      await exportPayrollPeriodToExcel({ period, items: scopedItems, tripsById, driverName, routeName, onlyDriverId });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xuất Excel thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
+
   if (loadingPeriod || !period) return null;
 
   return (
-    <div className="flex flex-col gap-6 pb-8">
+    <>
+      <div className="hidden print:block">
+        <PrintHeader
+          title={
+            printingDriverId
+              ? `Phiếu lương — ${driverName(printingDriverId)} — Kỳ ${period.periodCode}`
+              : `Bảng lương tài xế — Kỳ ${period.periodCode}`
+          }
+          company={company}
+        />
+        <p className="text-sm mb-2">
+          Từ ngày {period.fromDate} đến ngày {period.toDate}
+        </p>
+        {printItems.map((item) => {
+          const trips = item.tripIds.map((id) => tripsById[id]).filter((t): t is Trip => Boolean(t));
+          return (
+            <div key={item.driverId} className="mb-3 break-inside-avoid">
+              <table className="w-full text-sm border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-black">
+                    <th className="text-left py-1 px-2">Tài xế</th>
+                    <th className="text-right py-1 px-2">Lương cơ bản</th>
+                    <th className="text-right py-1 px-2">Lương chuyến</th>
+                    <th className="text-right py-1 px-2">Ứng lương</th>
+                    <th className="text-right py-1 px-2">Điều chỉnh</th>
+                    <th className="text-right py-1 px-2">Thực nhận</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-gray-300 font-semibold">
+                    <td className="py-1 px-2">{driverName(item.driverId)}</td>
+                    <td className="text-right py-1 px-2">{currencyFormatter.format(item.baseSalary)}</td>
+                    <td className="text-right py-1 px-2">{currencyFormatter.format(item.tripSalary)}</td>
+                    <td className="text-right py-1 px-2">{currencyFormatter.format(item.advance)}</td>
+                    <td className="text-right py-1 px-2">{currencyFormatter.format(item.adjustment)}</td>
+                    <td className="text-right py-1 px-2">{currencyFormatter.format(item.netAmount)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              {trips.length > 0 && (
+                <table className="w-[calc(100%-1rem)] ml-4 text-xs border-collapse">
+                  <thead>
+                    <tr className="text-gray-500">
+                      <th className="text-left py-0.5 px-1.5 font-normal">Mã chuyến</th>
+                      <th className="text-left py-0.5 px-1.5 font-normal">Ngày</th>
+                      <th className="text-left py-0.5 px-1.5 font-normal">Tuyến</th>
+                      <th className="text-right py-0.5 px-1.5 font-normal">Lương chuyến</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trips.map((trip) => (
+                      <tr key={trip.id} className="border-b border-dotted border-gray-300">
+                        <td className="py-0.5 px-1.5">{trip.tripCode}</td>
+                        <td className="py-0.5 px-1.5">{trip.tripDate}</td>
+                        <td className="py-0.5 px-1.5">{routeName(trip)}</td>
+                        <td className="text-right py-0.5 px-1.5">{currencyFormatter.format(trip.driverTripSalary || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="font-medium">
+                      <td colSpan={3} className="text-right py-0.5 px-1.5">
+                        Tổng lương chuyến ({trips.length} chuyến):
+                      </td>
+                      <td className="text-right py-0.5 px-1.5">{currencyFormatter.format(item.tripSalary)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              )}
+            </div>
+          );
+        })}
+        {!printingDriverId && (
+          <table className="w-full text-sm border-collapse mt-2">
+            <tfoot>
+              <tr className="border-t-2 border-black font-semibold">
+                <td className="py-1 px-2">Tổng cộng</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(printTotals.totalBaseSalary)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(printTotals.totalTripSalary)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(printTotals.totalAdvance)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(printTotals.totalAdjustment)}</td>
+                <td className="text-right py-1 px-2">{currencyFormatter.format(printTotals.totalNet)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        )}
+        <PrintSignatureBlock partyLabel="Xác nhận của tài xế" company={company} />
+      </div>
+
+      <div className="print:hidden flex flex-col gap-6 pb-8">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div>
           <h4 className="text-base font-semibold text-gray-800 dark:text-white/90">Kỳ lương {period.periodCode}</h4>
@@ -229,7 +405,15 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
             {period.fromDate} → {period.toDate}
           </p>
         </div>
-        <PayrollStatusBadge status={period.status} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <PayrollStatusBadge status={period.status} />
+          <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5">
+            <Printer className="h-3.5 w-3.5" /> In bảng lương
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={() => void onExportExcel()} className="flex items-center gap-1.5">
+            <Download className="h-3.5 w-3.5" /> Xuất Excel
+          </Button>
+        </div>
       </div>
 
       {period.unlockReason && (
@@ -287,17 +471,79 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
             <div key={item.driverId} className="grid grid-cols-1 sm:grid-cols-6 gap-3 items-end border-b pb-3 last:border-b-0">
               <div className="sm:col-span-2">
                 <Label className="whitespace-nowrap">Tài xế</Label>
-                <p className="h-8 flex items-center font-medium text-gray-800 dark:text-white/90">{driverName(item.driverId)}</p>
-                <p className="text-xs text-gray-400">{item.tripIds.length} chuyến trong kỳ</p>
+                <div className="h-8 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Checkbox
+                      checked={!excludedFromPrint.has(item.driverId)}
+                      onCheckedChange={(checked) => toggleExcludedFromPrint(item.driverId, checked === true)}
+                      title="Bỏ chọn để không đưa tài xế này vào In bảng lương / Xuất Excel cả kỳ"
+                    />
+                    <p className="font-medium text-gray-800 dark:text-white/90 truncate">{driverName(item.driverId)}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 flex items-center gap-1"
+                    onClick={() => setPrintingDriverId(item.driverId)}
+                  >
+                    <Printer className="h-3.5 w-3.5" /> In phiếu
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="shrink-0 flex items-center gap-1"
+                    onClick={() => void onExportExcel(item.driverId)}
+                  >
+                    <Download className="h-3.5 w-3.5" /> Excel
+                  </Button>
+                </div>
+                <button
+                  type="button"
+                  className="text-xs text-brand-600 hover:underline dark:text-brand-400"
+                  onClick={() => toggleExpanded(item.driverId)}
+                >
+                  {item.tripIds.length} chuyến trong kỳ
+                </button>
               </div>
+              {expandedDriverIds.has(item.driverId) && (
+                <div className="sm:col-span-6 rounded-lg border border-gray-100 dark:border-gray-800 overflow-hidden">
+                  {item.tripIds.length === 0 ? (
+                    <p className="text-xs text-gray-400 p-2">Không có chuyến nào trong kỳ.</p>
+                  ) : (
+                    <table className="w-full text-xs">
+                      <thead className="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                          <th className="text-left p-1.5 font-medium">Mã chuyến</th>
+                          <th className="text-left p-1.5 font-medium">Ngày</th>
+                          <th className="text-left p-1.5 font-medium">Tuyến</th>
+                          <th className="text-right p-1.5 font-medium">Lương chuyến</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {item.tripIds
+                          .map((id) => tripsById[id])
+                          .filter((t): t is Trip => Boolean(t))
+                          .map((trip) => (
+                            <tr key={trip.id} className="border-t border-gray-100 dark:border-gray-800">
+                              <td className="p-1.5">{trip.tripCode}</td>
+                              <td className="p-1.5">{trip.tripDate}</td>
+                              <td className="p-1.5">{routeName(trip)}</td>
+                              <td className="p-1.5 text-right">{currencyFormatter.format(trip.driverTripSalary || 0)}</td>
+                            </tr>
+                          ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
               <div>
                 <Label className="whitespace-nowrap">Lương cơ bản</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
                   disabled={!canUpdate}
                   value={item.baseSalary}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => updateRow(item.driverId, { baseSalary: e.target.valueAsNumber || 0 })}
+                  onChange={(value) => updateRow(item.driverId, { baseSalary: value })}
                 />
               </div>
               <div>
@@ -310,12 +556,11 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
               </div>
               <div>
                 <Label className="whitespace-nowrap">Điều chỉnh (+/-)</Label>
-                <Input
-                  type="number"
+                <CurrencyInput
+                  allowNegative
                   disabled={!canUpdate}
                   value={item.adjustment}
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => updateRow(item.driverId, { adjustment: e.target.valueAsNumber || 0 })}
+                  onChange={(value) => updateRow(item.driverId, { adjustment: value })}
                 />
               </div>
               <div className="sm:col-span-3">
@@ -333,38 +578,6 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
                   {currencyFormatter.format(item.netAmount)}
                 </p>
               </div>
-              {item.tripIds.length > 0 && (
-                <div className="mt-1 overflow-x-auto sm:col-span-6">
-                  <table className="w-full min-w-[560px] text-left text-xs">
-                    <thead className="border-b text-gray-500">
-                      <tr>
-                        <th className="px-2 py-1.5 font-medium">STT</th>
-                        <th className="px-2 py-1.5 font-medium">Ngày</th>
-                        <th className="px-2 py-1.5 font-medium">Mã chuyến</th>
-                        <th className="px-2 py-1.5 font-medium">Tuyến</th>
-                        <th className="px-2 py-1.5 text-right font-medium">Lương chuyến</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {item.tripIds.map((tripId, tripIndex) => {
-                        const trip = tripById.get(tripId);
-                        if (!trip) return null;
-                        return (
-                          <tr key={trip.id} className="border-b last:border-b-0">
-                            <td className="px-2 py-1.5">{tripIndex + 1}</td>
-                            <td className="px-2 py-1.5">{trip.tripDate}</td>
-                            <td className="px-2 py-1.5">{trip.tripCode}</td>
-                            <td className="px-2 py-1.5">
-                              {locationName(trip.pickupLocationId)} → {locationName(trip.dropoffLocationId)}
-                            </td>
-                            <td className="px-2 py-1.5 text-right">{currencyFormatter.format(trip.driverTripSalary || 0)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
             </div>
           ))}
         </div>
@@ -412,6 +625,7 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
           </Button>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

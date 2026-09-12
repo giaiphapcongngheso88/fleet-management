@@ -1,9 +1,10 @@
 "use client";
 
-import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { EntityImportConfig, EntityListPage } from "@/components/master-data/EntityListPage";
 import { SelectFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { locationService } from "@/services/master-data";
 import { LOCATION_TYPE_LABEL, Location, LocationType } from "@/types/master-data";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -65,6 +66,58 @@ const columns: ColumnDef<Location>[] = [
   },
 ];
 
+const LOCATION_TYPE_BY_ALIAS: Record<string, LocationType> = {
+  pickup: "PICKUP",
+  dropoff: "DROPOFF",
+  both: "BOTH",
+  "điểm nâng": "PICKUP",
+  "điểm hạ": "DROPOFF",
+  "nâng & hạ": "BOTH",
+  "nâng và hạ": "BOTH",
+  "nâng": "PICKUP",
+  "hạ": "DROPOFF",
+};
+
+const IMPORT_COLUMNS: ImportColumn<Location>[] = [
+  { key: "code", header: "Mã điểm", required: true, example: "DIEM001" },
+  { key: "name", header: "Tên điểm", required: true, example: "Kho A, Quận 7" },
+  { key: "type", header: "Loại điểm (*)", required: true, example: "Nâng & hạ" },
+  { key: "address", header: "Địa chỉ" },
+];
+
+const importConfig: EntityImportConfig<Location> = {
+  columns: IMPORT_COLUMNS,
+  sheetName: "Điểm nâng-hạ",
+  templateFileName: "mau-import-diem-nang-ha.xlsx",
+  validateRow: async (raw, rowsSoFar, existingData) => {
+    const code = String(raw.code ?? "").trim();
+    const name = String(raw.name ?? "").trim();
+    const typeRaw = String(raw.type ?? "")
+      .trim()
+      .toLowerCase();
+    const type = LOCATION_TYPE_BY_ALIAS[typeRaw];
+    const errors: string[] = [];
+    if (typeRaw && !type) {
+      errors.push(`Loại điểm "${raw.type}" không hợp lệ — chỉ nhận "Điểm nâng", "Điểm hạ" hoặc "Nâng & hạ"`);
+    }
+    if (code) {
+      if (existingData.some((l) => l.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" đã tồn tại trong hệ thống`);
+      else if (rowsSoFar.some((l) => l.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" bị trùng trong file`);
+    }
+    if (errors.length > 0) return { errors };
+    return {
+      payload: {
+        code,
+        name,
+        type: type ?? "BOTH",
+        address: String(raw.address ?? "") || undefined,
+        status: "ACTIVE",
+      },
+      errors: [],
+    };
+  },
+};
+
 export default function LocationPage() {
   return (
     <EntityListPage<Location, FormValues>
@@ -86,6 +139,7 @@ export default function LocationPage() {
         const dup = await locationService.existsByField("code", values.code, editingId);
         return dup ? "Mã điểm nâng/hạ đã tồn tại" : null;
       }}
+      importConfig={importConfig}
       columns={columns}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">

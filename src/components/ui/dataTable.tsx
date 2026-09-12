@@ -29,8 +29,10 @@ import {
 
 import { cn, normalizeString } from "@/app/lib/utils";
 import { useIsMobile } from "@/hooks/useIsMobile";
+import { exportRowsToExcel } from "@/lib/excel/genericExport";
 import { STATUS_LABEL } from "@/types/common";
 import { PAYROLL_PERIOD_STATUS_LABEL } from "@/types/payroll";
+import { QUOTE_STATUS_LABEL } from "@/types/quote";
 import { TRIP_STATUS_LABEL } from "@/types/trip";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -58,7 +60,7 @@ import {
 } from "@radix-ui/react-icons";
 import { PopoverTrigger } from "@radix-ui/react-popover";
 import { isValid, parse, parseISO } from "date-fns";
-import { FilterIcon, SquareArrowOutUpRight } from "lucide-react";
+import { Download, FilterIcon, SquareArrowOutUpRight } from "lucide-react";
 import {
     CSSProperties,
     Fragment,
@@ -100,6 +102,14 @@ declare module "@tanstack/react-table" {
         className?: string;
         titleToggleColumn?: string;
         enableColumnFilterDropdown?: boolean;
+        /** Tên cột dùng khi xuất Excel (mục 35) — mặc định lấy title hiển thị nếu không khai báo. */
+        exportHeader?: string;
+        /**
+         * Giá trị dùng khi xuất Excel (mục 35) — bắt buộc cho cột không có accessorKey hoặc cột hiển
+         * thị tên tra cứu (vd customerId hiển thị tên khách hàng) thay vì giá trị thô lưu trong data.
+         * Không khai báo = lấy giá trị thô qua accessorKey (không tra cứu tên).
+         */
+        exportValue?: (row: TData) => string | number;
     }
 
     interface TableMeta<TData extends RowData> {
@@ -158,6 +168,10 @@ interface DataTableProps<TData, TNestedData, TValue> {
     columnPinning?: string[];
     initialColumnFilters?: ColumnFiltersState;
     viewOptionsContentClassName?: string;
+    /** Hiện nút "Xuất Excel" (mục 35) — xuất đúng dữ liệu đã lọc (cột/tìm kiếm/khoảng ngày ở trang gọi). */
+    enableExport?: boolean;
+    /** Tên file khi xuất, không gồm đuôi .xlsx (mặc định "du-lieu"). */
+    exportFileName?: string;
 }
 
 const dateFormats = Object.values(DATE_FORMAT);
@@ -171,6 +185,7 @@ const STATUS_FILTER_LABELS: Record<string, string> = {
     ...STATUS_LABEL,
     ...TRIP_STATUS_LABEL,
     ...PAYROLL_PERIOD_STATUS_LABEL,
+    ...QUOTE_STATUS_LABEL,
 };
 
 const getCommonPinningStyles = <TData,>(
@@ -232,6 +247,8 @@ export function DataTable<TData, TNestedData, TValue>({
     columnPinning,
     initialColumnFilters,
     viewOptionsContentClassName,
+    enableExport,
+    exportFileName,
 }: DataTableProps<TData, TNestedData, TValue>) {
     const [isMounted, setIsMouned] = useState<boolean>(false);
     // Mục 48.1 spec nghiệp vụ: dưới breakpoint mobile chuyển bảng -> thẻ, không cài riêng từng
@@ -342,9 +359,21 @@ export function DataTable<TData, TNestedData, TValue>({
         columnPinning,
     ]);
 
+    // Cột "status" (và các cột trạng thái tương tự) chứa các mã enum như "ACTIVE"/"INACTIVE" —
+    // filterFn mặc định của react-table cho cột string là so khớp chuỗi con (includesString), nên
+    // lọc "ACTIVE" vẫn khớp cả "INACTIVE" (vì "INACTIVE" chứa "ACTIVE" như 1 chuỗi con). Cột trạng
+    // thái phải so khớp chính xác (equals), không phải so khớp chuỗi con.
+    const resolvedColumns = useMemo(
+        () =>
+            columns.map((col) =>
+                col.id === "status" && !col.filterFn ? { ...col, filterFn: "equals" as const } : col,
+            ),
+        [columns],
+    );
+
     const configReactTable: TableOptions<TData> = {
         data,
-        columns,
+        columns: resolvedColumns,
         onSortingChange: setSorting,
         onColumnFiltersChange: setColumnFilters,
         getCoreRowModel: getCoreRowModel(),
@@ -431,6 +460,60 @@ export function DataTable<TData, TNestedData, TValue>({
 
     const table = useReactTable(configReactTable);
     const rowCount = table.getRowCount();
+
+    /**
+     * Xuất Excel (mục 35) — lấy đúng dữ liệu đã qua filter cột + tìm kiếm hiện tại
+     * (`getFilteredRowModel`), không phải toàn bộ `data` gốc — nên tự đáp ứng cả "xuất tất cả" (không
+     * filter) lẫn "xuất theo bộ lọc" mà không cần 2 nút riêng. Bộ lọc khoảng ngày ở trang gọi (nếu có)
+     * đã thu hẹp `data` truyền vào DataTable từ trước nên cũng tự được áp dụng.
+     */
+    const handleExport = async () => {
+        const exportableColumns = resolvedColumns.filter(
+            (col) => col.id !== "index" && col.id !== "actions",
+        );
+        const exportColumns = exportableColumns.map((col) => {
+            // Hầu hết cột không khai báo exportHeader riêng — hầu hết trang đều dựng header qua
+            // <DataTableColumnHeaderSort title="..."/> (hoặc trả thẳng chuỗi cho cột không sort được
+            // như "Tuyến"). Header/cell chỉ là descriptor JSX thuần (React.createElement), gọi hàm này
+            // KHÔNG render component thật (không gọi hook, không side effect) nên đọc .props.title an
+            // toàn — tránh phải khai báo exportHeader lặp lại ở từng trang cho mọi cột.
+            let header = col.meta?.exportHeader;
+            if (!header && typeof col.header === "function") {
+                try {
+                    const rendered = (col.header as (ctx: unknown) => unknown)({ column: {} });
+                    if (typeof rendered === "string") header = rendered;
+                    else if (
+                        rendered &&
+                        typeof rendered === "object" &&
+                        "props" in rendered &&
+                        typeof (rendered as { props?: { title?: unknown } }).props?.title === "string"
+                    ) {
+                        header = (rendered as { props: { title: string } }).props.title;
+                    }
+                } catch {
+                    // Header cần dữ liệu table thật (hiếm) — bỏ qua, dùng id làm tên cột.
+                }
+            }
+            header = header ?? (typeof col.header === "string" ? col.header : col.id) ?? "";
+            const exportValue = col.meta?.exportValue;
+            // Cột dùng accessorFn (giá trị lấy từ 1 field lồng, vd row.trip.tripDate) thì phải gọi
+            // đúng accessorFn đó — đọc row[id] trực tiếp sẽ luôn ra undefined vì id không phải tên
+            // field thật trên object.
+            const accessorFn = "accessorFn" in col ? col.accessorFn : undefined;
+            return {
+                header,
+                value: (row: TData): string | number => {
+                    if (exportValue) return exportValue(row);
+                    const raw = accessorFn ? accessorFn(row, 0) : (row as Record<string, unknown>)[col.id as string];
+                    // Cột trạng thái luôn map sang nhãn tiếng Việt, khỏi cần khai báo lại ở từng trang.
+                    if (col.id === "status" && typeof raw === "string") return STATUS_FILTER_LABELS[raw] ?? raw;
+                    return (raw as string | number) ?? "";
+                },
+            };
+        });
+        const rows = table.getFilteredRowModel().rows.map((r) => r.original);
+        await exportRowsToExcel("Dữ liệu", exportColumns, rows, `${exportFileName ?? "du-lieu"}.xlsx`);
+    };
 
     useEffect(() => {
         setPagination((prev) => ({
@@ -631,8 +714,8 @@ export function DataTable<TData, TNestedData, TValue>({
     return (
         <>
             {isLoading && <Spinner />}
-            {(enableGlobalFilter || (showCardView && enableColumnFilter)) && (
-                <div className="flex items-center gap-2 mb-1 h-lg:mb-2">
+            {(enableGlobalFilter || (showCardView && enableColumnFilter) || enableExport) && (
+                <div className="print:hidden flex items-center gap-2 mb-1 h-lg:mb-2">
                     {enableGlobalFilter && (
                         <div className="relative flex-1 min-w-0">
                             <DebouncedInput
@@ -650,6 +733,18 @@ export function DataTable<TData, TNestedData, TValue>({
                     )}
                     {showCardView && enableColumnFilter && (
                         <MobileColumnFilters table={table} />
+                    )}
+                    {enableExport && (
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size={showCardView ? "icon" : "sm"}
+                            className="shrink-0 flex items-center gap-1.5"
+                            onClick={() => void handleExport()}
+                        >
+                            <Download className="h-3.5 w-3.5" />
+                            {!showCardView && "Xuất Excel"}
+                        </Button>
                     )}
                 </div>
             )}
@@ -1297,7 +1392,7 @@ function DataTablePagination<TData>({
     const navButtonClass = isMobile ? "h-6 w-6" : undefined;
     const navIconClass = isMobile ? "h-3 w-3" : "h-4 w-4";
     return (
-        <div className={cn("flex flex-wrap items-center justify-end p-2", isMobile ? "gap-x-2 gap-y-1.5" : "gap-x-6 gap-y-2 lg:gap-x-8")}>
+        <div className={cn("print:hidden flex flex-wrap items-center justify-end p-2", isMobile ? "gap-x-2 gap-y-1.5" : "gap-x-6 gap-y-2 lg:gap-x-8")}>
             <div className={cn("flex flex-wrap items-center", isMobile ? "gap-1.5" : "gap-2")}>
                 {enableToggleColumn && (
                     <DataTableViewOptions

@@ -1,10 +1,11 @@
 "use client";
 
-import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { EntityImportConfig, EntityListPage } from "@/components/master-data/EntityListPage";
 import { CheckboxFormField, TextAreaFormField, TextFormField } from "@/components/master-data/FormFields";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
 import Badge from "@/components/ui/badge/Badge";
 import { DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { ImportColumn } from "@/lib/excel/genericImport";
 import { costTypeService } from "@/services/master-data";
 import { CostType } from "@/types/cost-type";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -71,6 +72,12 @@ const columns: ColumnDef<CostType>[] = [
         )}
       </div>
     ),
+    meta: {
+      exportValue: (row) =>
+        [row.isFuel && "Nhiên liệu", (row.isTripCost ?? true) && "Chi phí chuyến", (row.isCashTransaction ?? false) && "Thu - Chi"]
+          .filter(Boolean)
+          .join(", "),
+    },
   },
   {
     id: "status",
@@ -79,6 +86,41 @@ const columns: ColumnDef<CostType>[] = [
     cell: ({ row }) => <StatusBadge status={row.original.status} />,
   },
 ];
+
+const IMPORT_COLUMNS: ImportColumn<CostType>[] = [
+  { key: "code", header: "Mã loại chi phí", required: true, example: "CP001" },
+  { key: "name", header: "Tên loại chi phí", required: true, example: "Đổ dầu" },
+  { key: "isFuel", header: "Nhiên liệu (x = có)", type: "boolean", example: "x" },
+  { key: "isTripCost", header: "Chi phí chuyến (x = có)", type: "boolean", example: "x" },
+  { key: "isCashTransaction", header: "Thu - Chi (x = có)", type: "boolean" },
+];
+
+const importConfig: EntityImportConfig<CostType> = {
+  columns: IMPORT_COLUMNS,
+  sheetName: "Loại chi phí",
+  templateFileName: "mau-import-loai-chi-phi.xlsx",
+  validateRow: async (raw, rowsSoFar, existingData) => {
+    const code = String(raw.code ?? "").trim();
+    const name = String(raw.name ?? "").trim();
+    const errors: string[] = [];
+    if (code) {
+      if (existingData.some((c) => c.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" đã tồn tại trong hệ thống`);
+      else if (rowsSoFar.some((c) => c.code.toLowerCase() === code.toLowerCase())) errors.push(`Mã "${code}" bị trùng trong file`);
+    }
+    if (errors.length > 0) return { errors };
+    return {
+      payload: {
+        code,
+        name,
+        isFuel: Boolean(raw.isFuel),
+        isTripCost: Boolean(raw.isTripCost),
+        isCashTransaction: Boolean(raw.isCashTransaction),
+        status: "ACTIVE",
+      },
+      errors: [],
+    };
+  },
+};
 
 export default function CostTypePage() {
   return (
@@ -102,6 +144,7 @@ export default function CostTypePage() {
         const dup = await costTypeService.existsByField("code", values.code, editingId);
         return dup ? "Mã loại chi phí đã tồn tại" : null;
       }}
+      importConfig={importConfig}
       columns={columns}
       renderForm={(form) => (
         <div className="grid grid-cols-2 gap-3">

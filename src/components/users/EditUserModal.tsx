@@ -30,10 +30,13 @@ export default function EditUserModal({
   target,
   onClose,
   fetchData,
+  viewOnly,
 }: {
   target: AppUser;
   onClose: () => void;
   fetchData: () => Promise<void>;
+  /** Mở dialog ở chế độ chỉ xem (dùng cho role chỉ có quyền VIEW, không có UPDATE). */
+  viewOnly?: boolean;
 }) {
   const { alert } = useFeedbackDialog();
   const { showLoading, hideLoading } = useLoading();
@@ -61,19 +64,27 @@ export default function EditUserModal({
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="bg-white min-w-[600px] flex flex-col justify-between p-4">
         <DialogHeader className="w-full">
-          <DialogTitle className="text-md">Cập nhật người dùng</DialogTitle>
+          <DialogTitle className="text-md">{viewOnly ? "Xem người dùng" : "Cập nhật người dùng"}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-3">
-              <TextFormField control={form.control} name="fullName" label="Họ tên" required />
-              <TextFormField control={form.control} name="phone" label="Điện thoại" />
-              <SelectFormField control={form.control} name="role" label="Vai trò" options={roleOptions} required />
-            </div>
+            <fieldset disabled={viewOnly} className="contents">
+              <div className="grid grid-cols-2 gap-3">
+                <TextFormField control={form.control} name="fullName" label="Họ tên" required />
+                <TextFormField control={form.control} name="phone" label="Điện thoại" />
+                <SelectFormField control={form.control} name="role" label="Vai trò" options={roleOptions} required />
+              </div>
+            </fieldset>
             <div className="flex justify-end mt-4 w-full">
-              <Button variant="default" type="submit">
-                Lưu
-              </Button>
+              {viewOnly ? (
+                <Button type="button" variant="outline" onClick={onClose}>
+                  Đóng
+                </Button>
+              ) : (
+                <Button variant="default" type="submit">
+                  Lưu
+                </Button>
+              )}
             </div>
           </form>
         </Form>

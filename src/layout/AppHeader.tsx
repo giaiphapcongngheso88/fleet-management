@@ -18,7 +18,7 @@ const AppHeader: React.FC = () => {
   };
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 w-full items-center gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 lg:px-6">
+    <header className="print:hidden sticky top-0 z-40 flex h-16 w-full items-center gap-3 border-b border-gray-200 bg-white px-3 dark:border-gray-800 dark:bg-gray-900 lg:px-6">
       <button
         className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-gray-200 text-gray-500 dark:border-gray-800 dark:text-gray-400"
         onClick={handleToggle}

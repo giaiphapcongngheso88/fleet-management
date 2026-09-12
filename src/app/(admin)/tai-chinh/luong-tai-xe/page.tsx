@@ -42,7 +42,12 @@ export default function PayrollPeriodListPage() {
     void fetchData();
   }, [fetchData]);
 
-  const goToDetail = (period: PayrollPeriod) => router.push(`/tai-chinh/luong-tai-xe/${period.id}`);
+  // Hiện loading ngay lúc bấm, không tắt ở đây — trang đích tự tắt sau khi tải xong dữ liệu (hoặc
+  // tự dọn khi rời trang danh sách này), tránh khoảng trắng giữa lúc bấm và lúc trang đích render.
+  const goToDetail = (period: PayrollPeriod) => {
+    showLoading(ELoadingMessages.LOADING_DATA);
+    router.push(`/tai-chinh/luong-tai-xe/${period.id}`);
+  };
 
   const columns = useMemo<ColumnDef<PayrollPeriod>[]>(
     () => [
@@ -65,16 +70,19 @@ export default function PayrollPeriodListPage() {
             {row.original.fromDate} → {row.original.toDate}
           </div>
         ),
+        meta: { exportValue: (row) => `${row.fromDate} -> ${row.toDate}` },
       },
       {
         id: "driverCount",
         header: () => "Số tài xế",
         cell: ({ row }) => <div>{row.original.items.length}</div>,
+        meta: { exportValue: (row) => row.items.length },
       },
       {
         id: "totalNet",
         header: () => "Tổng thực nhận",
         cell: ({ row }) => <div>{currencyFormatter.format(computePayrollPeriodTotals(row.original.items).totalNet)}</div>,
+        meta: { exportValue: (row) => computePayrollPeriodTotals(row.items).totalNet },
       },
       {
         id: "status",
@@ -118,13 +126,22 @@ export default function PayrollPeriodListPage() {
             enablePaging
             enableColumnFilter
             enableGlobalFilter
+            enableExport
+            exportFileName="Luong-tai-xe"
             onChange={setData}
             onRowClick={goToDetail}
           />
         </div>
         <div className="border-t p-2 flex justify-end shrink-0">
           {can("payroll", "CREATE") && (
-            <Button variant="default" onClick={() => router.push("/tai-chinh/luong-tai-xe/moi")} className="flex items-center gap-2">
+            <Button
+              variant="default"
+              onClick={() => {
+                showLoading(ELoadingMessages.LOADING_DATA);
+                router.push("/tai-chinh/luong-tai-xe/moi");
+              }}
+              className="flex items-center gap-2"
+            >
               Tạo kỳ lương mới
             </Button>
           )}

@@ -4,6 +4,7 @@ import { ELoadingMessages } from "@/app/lib/enums";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
 import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeader";
 import { CurrencyFormField, DateFormField, SelectFormField, TextAreaFormField } from "@/components/master-data/FormFields";
+import { KpiCard } from "@/components/reports/KpiCard";
 import useLoading from "@/components/loading";
 import { Button } from "@/components/ui/button";
 import { DataTable, DataTableColumnHeaderSort } from "@/components/ui/dataTable";
@@ -33,7 +34,7 @@ import { PAYMENT_METHOD_LABEL, PaymentMethod } from "@/types/finance";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { Download, Printer, RefreshCw } from "lucide-react";
+import { Download, HandCoins, Printer, Receipt, RefreshCw, Save, TrendingUp } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
@@ -312,7 +313,8 @@ export default function ReceivablePage() {
         cell: ({ row }) =>
           canPay && row.original.remaining > 0 ? (
             <div className="flex justify-center">
-              <Button variant="outline" size="sm" onClick={() => openPayment(row.original.trip.id)}>
+              <Button variant="outline" size="sm" onClick={() => openPayment(row.original.trip.id)} className="flex items-center gap-1.5">
+                <Receipt className="h-3.5 w-3.5" />
                 Thu
               </Button>
             </div>
@@ -434,20 +436,9 @@ export default function ReceivablePage() {
       {ledger && (
         <div className="print:hidden flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-white/[0.03]">
-              <p className="text-xs text-gray-400">Tổng doanh thu (đã hoàn thành)</p>
-              <p className="text-lg font-semibold text-gray-800 dark:text-white/90">{currencyFormatter.format(ledger.totalRevenue)}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-white/[0.03]">
-              <p className="text-xs text-gray-400">Đã thu</p>
-              <p className="text-lg font-semibold text-success-600">{currencyFormatter.format(ledger.totalPaid)}</p>
-            </div>
-            <div className="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-white/[0.03]">
-              <p className="text-xs text-gray-400">Còn lại</p>
-              <p className={`text-lg font-semibold ${ledger.balance > 0 ? "text-error-600" : "text-success-600"}`}>
-                {currencyFormatter.format(ledger.balance)}
-              </p>
-            </div>
+            <KpiCard card={{ label: "Tổng doanh thu (đã hoàn thành)", value: ledger.totalRevenue, icon: TrendingUp }} />
+            <KpiCard card={{ label: "Đã thu", value: ledger.totalPaid, icon: HandCoins, highlight: "success" }} />
+            <KpiCard card={{ label: "Còn lại", value: ledger.balance, icon: Receipt, highlight: ledger.balance > 0 ? "error" : "success" }} />
           </div>
 
           <div className="flex items-center justify-between">
@@ -467,7 +458,8 @@ export default function ReceivablePage() {
                   partnerName={customerName(customerId)}
                   ledger={ledger}
                 />
-                <Button variant="default" onClick={() => openPayment(undefined)}>
+                <Button variant="default" onClick={() => openPayment(undefined)} className="flex items-center gap-1.5">
+                  <Receipt className="h-4 w-4" />
                   Ghi nhận thanh toán chung
                 </Button>
               </div>
@@ -503,7 +495,8 @@ export default function ReceivablePage() {
                 <SelectFormField control={form.control} name="paymentMethod" label="Phương thức" options={PAYMENT_METHOD_OPTIONS} required />
                 <TextAreaFormField control={form.control} name="description" label="Nội dung" />
                 <div className="flex justify-end mt-2">
-                  <Button type="submit" variant="default">
+                  <Button type="submit" variant="default" className="flex items-center gap-1.5">
+                    <Save className="h-4 w-4" />
                     Lưu
                   </Button>
                 </div>

@@ -6,6 +6,7 @@ import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeade
 import useLoading from "@/components/loading";
 import { PayrollStatusBadge } from "@/components/payroll/PayrollStatusBadge";
 import { Button } from "@/components/ui/button";
+import { KpiCard } from "@/components/reports/KpiCard";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { CurrencyInput } from "@/components/ui/currency-input";
@@ -31,7 +32,7 @@ import { Driver, Location } from "@/types/master-data";
 import { PayrollItem, PayrollPeriod } from "@/types/payroll";
 import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
-import { Download, Printer, Trash2, Wallet } from "lucide-react";
+import { Banknote, Download, Printer, Receipt, Trash2, TrendingUp, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
@@ -476,27 +477,12 @@ export function PayrollPeriodDetail({ periodId }: { periodId: string }) {
         </div>
       )}
 
-      <section className="rounded-2xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-white/[0.03] grid grid-cols-2 sm:grid-cols-5 gap-4">
-        <div>
-          <p className="text-xs text-gray-400">Lương cơ bản</p>
-          <p className="text-base font-semibold text-gray-800 dark:text-white/90">{currencyFormatter.format(totals.totalBaseSalary)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">Lương chuyến</p>
-          <p className="text-base font-semibold text-gray-800 dark:text-white/90">{currencyFormatter.format(totals.totalTripSalary)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">Ứng lương</p>
-          <p className="text-base font-semibold text-error-500">{currencyFormatter.format(totals.totalAdvance)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">Điều chỉnh</p>
-          <p className="text-base font-semibold text-gray-800 dark:text-white/90">{currencyFormatter.format(totals.totalAdjustment)}</p>
-        </div>
-        <div>
-          <p className="text-xs text-gray-400">Thực nhận</p>
-          <p className="text-lg font-semibold text-success-600">{currencyFormatter.format(totals.totalNet)}</p>
-        </div>
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-3">
+        <KpiCard card={{ label: "Lương cơ bản", value: totals.totalBaseSalary, icon: Banknote }} />
+        <KpiCard card={{ label: "Lương chuyến", value: totals.totalTripSalary, icon: TrendingUp }} />
+        <KpiCard card={{ label: "Ứng lương", value: totals.totalAdvance, icon: Wallet, highlight: "error" }} />
+        <KpiCard card={{ label: "Điều chỉnh", value: totals.totalAdjustment, icon: Receipt }} />
+        <KpiCard card={{ label: "Thực nhận", value: totals.totalNet, icon: Banknote, highlight: "success" }} />
       </section>
 
       {canUpdate && (

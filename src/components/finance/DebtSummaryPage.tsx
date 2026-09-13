@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button";
 import { DataTable, DataTableColumnHeaderSort } from "@/components/ui/dataTable";
+import { KpiCard } from "@/components/reports/KpiCard";
 import { InputDatePicker } from "@/components/ui/input-date-picker";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
 import useLoading from "@/components/loading";
@@ -34,7 +35,7 @@ import { format, parseISO } from "date-fns";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ColumnDef } from "@tanstack/react-table";
-import { Download, RefreshCw } from "lucide-react";
+import { Download, Eye, HandCoins, Landmark, RefreshCw, Wallet } from "lucide-react";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const currencyFormatter = new Intl.NumberFormat("vi-VN");
@@ -234,7 +235,9 @@ export default function DebtSummaryPage() {
               size="sm"
               variant="outline"
               onClick={() => router.push(row.original.objectType === "CUSTOMER" ? `/cong-no/khach-hang?partner=${row.original.objectId}` : `/cong-no/don-vi-van-tai?partner=${row.original.objectId}`)}
+              className="flex items-center gap-1.5"
             >
+              <Eye className="h-3.5 w-3.5" />
               Xem
             </Button>
             <Button
@@ -252,9 +255,25 @@ export default function DebtSummaryPage() {
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
   ], [can, router, customers, vendors, asOfDate, locations, vehicles, products]);
+  const totals = useMemo(
+    () => data.reduce(
+      (summary, row) => ({
+        incurred: summary.incurred + row.incurred,
+        paid: summary.paid + row.paid,
+        balance: summary.balance + row.balance,
+      }),
+      { incurred: 0, paid: 0, balance: 0 }
+    ),
+    [data]
+  );
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-3">
+    <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-3 rounded-2xl border border-gray-200 bg-white p-3 sm:p-4 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <KpiCard card={{ label: "Tổng phát sinh", value: totals.incurred, icon: Landmark }} />
+        <KpiCard card={{ label: "Đã thu / chi", value: totals.paid, icon: Wallet, highlight: "success" }} />
+        <KpiCard card={{ label: "Còn lại", value: totals.balance, icon: HandCoins, highlight: totals.balance > 0 ? "error" : "success" }} />
+      </div>
       <div className="flex flex-wrap items-end gap-2">
         <div className="w-44">
           <label className="text-sm font-medium">Đến ngày</label>

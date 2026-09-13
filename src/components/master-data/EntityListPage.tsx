@@ -18,7 +18,7 @@ import { ImportColumn } from "@/lib/excel/genericImport";
 import { BaseEntity } from "@/types/common";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit, Eye, RefreshCw, Upload } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye, Plus, RefreshCw, Save, Upload, X } from "lucide-react";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { DefaultValues, FieldValues, Resolver, UseFormReturn, useForm } from "react-hook-form";
 
@@ -298,6 +298,7 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
         )}
         {can(resourceKey, "CREATE") && (
           <Button variant="default" onClick={openCreate} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
             Thêm
           </Button>
         )}
@@ -342,10 +343,12 @@ export function EntityListPage<T extends BaseEntity, TForm extends FieldValues>(
                 <div className="flex justify-end mt-4 w-full">
                   {viewOnly ? (
                     <Button type="button" variant="outline" onClick={closeModal}>
+                      <X className="h-4 w-4" />
                       Đóng
                     </Button>
                   ) : (
                     <Button variant="default" type="submit" className="flex items-center gap-2">
+                      <Save className="h-4 w-4" />
                       Lưu
                     </Button>
                   )}

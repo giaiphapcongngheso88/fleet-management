@@ -19,13 +19,14 @@ import { useModal } from "@/hooks/useModal";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { locationService, productService, vehicleService, vendorService } from "@/services/master-data";
 import {
+  computeAllVendorPayables,
   computeVendorPayable,
   financeTransactionService,
   generateTransactionNo,
   LedgerResult,
   TripLedgerRow,
 } from "@/services/finance";
-import { exportLedgerToExcel } from "@/lib/excel/ledgerExport";
+import { exportVendorLedgerToExcel, PartnerLedgerItem } from "@/lib/excel/ledgerExport";
 import { DebtReconciliationDialog } from "@/components/finance/DebtReconciliationDialog";
 import { Location, Product, Vehicle, Vendor } from "@/types/master-data";
 import { PAYMENT_METHOD_LABEL, PaymentMethod } from "@/types/finance";
@@ -83,25 +84,73 @@ export default function PayablePage() {
 
   const canPay = can("payable", "UPDATE");
 
-  const onExportExcel = () => {
-    if (!ledger) return;
-    void exportLedgerToExcel({
-      documentTitle: "Bảng kê công nợ đơn vị vận tải",
-      partnerFieldLabel: "Tên ĐV vận tải:",
-      partnerName: vendorName(vendorId),
-      partnerTaxCode: vendors.find((v) => v.id === vendorId)?.taxCode,
-      partnerAddress: vendors.find((v) => v.id === vendorId)?.address,
-      partnerPhone: vendors.find((v) => v.id === vendorId)?.phone,
+  const onExportExcel = async () => {
+    if (!ledger || !vendorId) return;
+    const currentVendor = vendors.find((v) => v.id === vendorId);
+    const item: PartnerLedgerItem = {
+      partnerId: vendorId,
+      partnerName: currentVendor?.name ?? vendorName(vendorId),
+      partnerCode: currentVendor?.code,
+      partnerTaxCode: currentVendor?.taxCode,
+      partnerAddress: currentVendor?.address,
+      partnerPhone: currentVendor?.phone,
       ledger,
-      vehiclePlate,
-      locationName,
-      productName,
-      amountLabel: "Cước thuê",
-      amountValue: (trip) => trip.vendorCost ?? 0,
-      paidLabel: "Đã trả",
-      confirmLeftLabel: "XÁC NHẬN CỦA ĐƠN VỊ VẬN TẢI",
-      fileName: `cong-no-${vendorName(vendorId)}`,
-    });
+    };
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      await exportVendorLedgerToExcel({
+        items: [item],
+        asOfDate,
+        onlyPartnerId: vendorId,
+        vehiclePlate,
+        locationName,
+        productName,
+      });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xuất Excel thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
+
+  const onExportAllExcel = async () => {
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      const allLedgers = await computeAllVendorPayables(asOfDate);
+      const items: PartnerLedgerItem[] = [];
+
+      for (const vendor of vendors) {
+        const vendorLedger = allLedgers.get(vendor.id);
+        if (vendorLedger && (vendorLedger.rows.length > 0 || vendorLedger.unlinkedPayments > 0)) {
+          items.push({
+            partnerId: vendor.id,
+            partnerName: vendor.name,
+            partnerCode: vendor.code,
+            partnerTaxCode: vendor.taxCode,
+            partnerAddress: vendor.address,
+            partnerPhone: vendor.phone,
+            ledger: vendorLedger,
+          });
+        }
+      }
+
+      if (items.length === 0) {
+        await alert({ title: "Thông báo", content: "Không có dữ liệu công nợ đơn vị vận tải nào đến ngày đã chọn." });
+        return;
+      }
+
+      await exportVendorLedgerToExcel({
+        items,
+        asOfDate,
+        vehiclePlate,
+        locationName,
+        productName,
+      });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xuất Excel tất cả đơn vị vận tải thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
   };
 
   const loadLedger = async (id: string, date = asOfDate) => {
@@ -337,7 +386,17 @@ export default function PayablePage() {
              if (vendorId) void loadLedger(vendorId, nextDate);
            }}
          />
-        </div>
+         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void onExportAllExcel()}
+          className="flex items-center gap-1.5 shrink-0"
+          title="Xuất Excel toàn bộ đơn vị vận tải có công nợ theo đúng định dạng chứng từ"
+        >
+          <Download className="h-3.5 w-3.5" /> Xuất tất cả ĐVVT
+        </Button>
         {ledger && (
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5 shrink-0">
@@ -352,7 +411,14 @@ export default function PayablePage() {
             >
               <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Tải lại</span>
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onExportExcel} className="flex items-center gap-1.5 shrink-0">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => void onExportExcel()}
+              className="flex items-center gap-1.5 shrink-0"
+              title="Xuất Excel bảng kê công nợ cho đơn vị vận tải này"
+            >
               <Download className="h-3.5 w-3.5" /> Xuất Excel
             </Button>
           </>
@@ -411,8 +477,6 @@ export default function PayablePage() {
               enablePaging
               enableColumnFilter
               enableGlobalFilter
-              enableExport
-              exportFileName="Cong-no-don-vi-van-tai"
             />
           </div>
         </div>

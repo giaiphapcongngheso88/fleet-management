@@ -19,13 +19,14 @@ import { useModal } from "@/hooks/useModal";
 import { useReferenceData } from "@/hooks/useReferenceData";
 import { customerService, locationService, productService, vehicleService } from "@/services/master-data";
 import {
+  computeAllCustomerReceivables,
   computeCustomerReceivable,
   financeTransactionService,
   generateTransactionNo,
   LedgerResult,
   TripLedgerRow,
 } from "@/services/finance";
-import { exportLedgerToExcel } from "@/lib/excel/ledgerExport";
+import { exportCustomerLedgerToExcel, PartnerLedgerItem } from "@/lib/excel/ledgerExport";
 import { DebtReconciliationDialog } from "@/components/finance/DebtReconciliationDialog";
 import { Customer, Location, Product, Vehicle } from "@/types/master-data";
 import { PAYMENT_METHOD_LABEL, PaymentMethod } from "@/types/finance";
@@ -83,25 +84,73 @@ export default function ReceivablePage() {
 
   const canPay = can("receivable", "UPDATE");
 
-  const onExportExcel = () => {
-    if (!ledger) return;
-    void exportLedgerToExcel({
-      documentTitle: "Bảng kê công nợ khách hàng",
-      partnerFieldLabel: "Tên KH:",
-      partnerName: customerName(customerId),
-      partnerTaxCode: customers.find((c) => c.id === customerId)?.taxCode,
-      partnerAddress: customers.find((c) => c.id === customerId)?.address,
-      partnerPhone: customers.find((c) => c.id === customerId)?.phone,
+  const onExportExcel = async () => {
+    if (!ledger || !customerId) return;
+    const currentCustomer = customers.find((c) => c.id === customerId);
+    const item: PartnerLedgerItem = {
+      partnerId: customerId,
+      partnerName: currentCustomer?.name ?? customerName(customerId),
+      partnerCode: currentCustomer?.code,
+      partnerTaxCode: currentCustomer?.taxCode,
+      partnerAddress: currentCustomer?.address,
+      partnerPhone: currentCustomer?.phone,
       ledger,
-      vehiclePlate,
-      locationName,
-      productName,
-      amountLabel: "Tổng thu",
-      amountValue: (trip) => trip.revenue ?? 0,
-      paidLabel: "Đã thu",
-      confirmLeftLabel: "XÁC NHẬN CỦA KHÁCH HÀNG",
-      fileName: `cong-no-${customerName(customerId)}`,
-    });
+    };
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      await exportCustomerLedgerToExcel({
+        items: [item],
+        asOfDate,
+        onlyPartnerId: customerId,
+        vehiclePlate,
+        locationName,
+        productName,
+      });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xuất Excel thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
+  };
+
+  const onExportAllExcel = async () => {
+    const loadingId = showLoading(ELoadingMessages.PROCESSING_DATA);
+    try {
+      const allLedgers = await computeAllCustomerReceivables(asOfDate);
+      const items: PartnerLedgerItem[] = [];
+
+      for (const customer of customers) {
+        const customerLedger = allLedgers.get(customer.id);
+        if (customerLedger && (customerLedger.rows.length > 0 || customerLedger.unlinkedPayments > 0)) {
+          items.push({
+            partnerId: customer.id,
+            partnerName: customer.name,
+            partnerCode: customer.code,
+            partnerTaxCode: customer.taxCode,
+            partnerAddress: customer.address,
+            partnerPhone: customer.phone,
+            ledger: customerLedger,
+          });
+        }
+      }
+
+      if (items.length === 0) {
+        await alert({ title: "Thông báo", content: "Không có dữ liệu công nợ khách hàng nào đến ngày đã chọn." });
+        return;
+      }
+
+      await exportCustomerLedgerToExcel({
+        items,
+        asOfDate,
+        vehiclePlate,
+        locationName,
+        productName,
+      });
+    } catch (err: unknown) {
+      await alert({ title: "Lỗi", content: "Xuất Excel tất cả khách hàng thất bại: " + getErrorMessage(err) });
+    } finally {
+      hideLoading(loadingId);
+    }
   };
 
   const loadLedger = async (id: string, date = asOfDate) => {
@@ -344,6 +393,16 @@ export default function ReceivablePage() {
            }}
          />
         </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void onExportAllExcel()}
+          className="flex items-center gap-1.5 shrink-0"
+          title="Xuất Excel toàn bộ khách hàng có công nợ theo đúng định dạng chứng từ"
+        >
+          <Download className="h-3.5 w-3.5" /> Xuất tất cả KH
+        </Button>
         {ledger && (
           <>
             <Button type="button" variant="outline" size="sm" onClick={() => window.print()} className="flex items-center gap-1.5 shrink-0">
@@ -358,7 +417,14 @@ export default function ReceivablePage() {
             >
               <RefreshCw className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Tải lại</span>
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={onExportExcel} className="flex items-center gap-1.5 shrink-0">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              onClick={() => void onExportExcel()}
+              className="flex items-center gap-1.5 shrink-0"
+              title="Xuất Excel bảng kê công nợ cho khách hàng này"
+            >
               <Download className="h-3.5 w-3.5" /> Xuất Excel
             </Button>
           </>
@@ -417,8 +483,6 @@ export default function ReceivablePage() {
               enablePaging
               enableColumnFilter
               enableGlobalFilter
-              enableExport
-              exportFileName="Cong-no-khach-hang"
             />
           </div>
         </div>

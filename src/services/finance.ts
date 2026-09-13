@@ -187,6 +187,105 @@ export function computeVendorPayable(vendorId: string, asOfDate?: string): Promi
   });
 }
 
+async function computeAllLedgers(params: {
+  tripField: "customerId" | "vendorId";
+  amountField: "revenue" | "vendorCost";
+  transactionType: TransactionType;
+  objectType: "CUSTOMER" | "VENDOR";
+  asOfDate?: string;
+}): Promise<Map<string, LedgerResult>> {
+  const { tripField, amountField, transactionType, objectType, asOfDate } = params;
+
+  const [tripsSnap, paymentsSnap] = await Promise.all([
+    getDocs(collection(db, "trips")),
+    getDocs(
+      query(
+        collection(db, "finance_transactions"),
+        where("objectType", "==", objectType),
+        where("type", "==", transactionType)
+      )
+    ),
+  ]);
+
+  const trips = tripsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as Trip)
+    .filter((t) => RECEIVABLE_STATUSES.includes(t.status) && (!asOfDate || t.tripDate <= asOfDate));
+
+  const payments = paymentsSnap.docs
+    .map((d) => ({ id: d.id, ...d.data() }) as FinanceTransaction)
+    .filter((p) => p.status === "ACTIVE" && (!asOfDate || p.transactionDate <= asOfDate));
+
+  const tripsByPartner = new Map<string, Trip[]>();
+  for (const trip of trips) {
+    const partnerId = trip[tripField];
+    if (!partnerId) continue;
+    const list = tripsByPartner.get(partnerId) ?? [];
+    list.push(trip);
+    tripsByPartner.set(partnerId, list);
+  }
+
+  const unlinkedByPartner = new Map<string, number>();
+  const paidByTripId = new Map<string, number>();
+  const allPartnerIds = new Set<string>(tripsByPartner.keys());
+
+  for (const payment of payments) {
+    if (!payment.objectId) continue;
+    allPartnerIds.add(payment.objectId);
+    if (payment.tripId) {
+      paidByTripId.set(payment.tripId, (paidByTripId.get(payment.tripId) ?? 0) + payment.amount);
+    } else {
+      unlinkedByPartner.set(payment.objectId, (unlinkedByPartner.get(payment.objectId) ?? 0) + payment.amount);
+    }
+  }
+
+  const result = new Map<string, LedgerResult>();
+  for (const partnerId of allPartnerIds) {
+    const partnerTrips = tripsByPartner.get(partnerId) ?? [];
+    const unlinkedPayments = unlinkedByPartner.get(partnerId) ?? 0;
+
+    const rows: TripLedgerRow[] = partnerTrips.map((trip) => {
+      const amount = (trip[amountField] as number) ?? 0;
+      const paid = paidByTripId.get(trip.id) ?? 0;
+      return { trip, paid, remaining: amount - paid };
+    });
+
+    const totalRevenue = rows.reduce((sum, r) => sum + ((r.trip[amountField] as number) ?? 0), 0);
+    const totalPaid = rows.reduce((sum, r) => sum + r.paid, 0) + unlinkedPayments;
+
+    result.set(partnerId, {
+      rows,
+      unlinkedPayments,
+      totalRevenue,
+      totalPaid,
+      balance: totalRevenue - totalPaid,
+    });
+  }
+
+  return result;
+}
+
+/** Lấy toàn bộ sổ công nợ khách hàng (tối ưu 2 queries cho xuất Excel toàn bộ). */
+export function computeAllCustomerReceivables(asOfDate?: string): Promise<Map<string, LedgerResult>> {
+  return computeAllLedgers({
+    tripField: "customerId",
+    amountField: "revenue",
+    transactionType: "RECEIPT",
+    objectType: "CUSTOMER",
+    asOfDate,
+  });
+}
+
+/** Lấy toàn bộ sổ công nợ đơn vị vận tải (tối ưu 2 queries cho xuất Excel toàn bộ). */
+export function computeAllVendorPayables(asOfDate?: string): Promise<Map<string, LedgerResult>> {
+  return computeAllLedgers({
+    tripField: "vendorId",
+    amountField: "vendorCost",
+    transactionType: "PAYMENT",
+    objectType: "VENDOR",
+    asOfDate,
+  });
+}
+
 export interface FinanceSummary {
   totalReceipt: number;
   totalPayment: number;

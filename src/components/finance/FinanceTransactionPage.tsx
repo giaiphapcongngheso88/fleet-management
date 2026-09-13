@@ -2,6 +2,7 @@
 
 import { CurrencyFormField, DateFormField, SelectFormField, TextAreaFormField } from "@/components/master-data/FormFields";
 import { EntityListPage } from "@/components/master-data/EntityListPage";
+import { KpiCard } from "@/components/reports/KpiCard";
 import { RowAction } from "@/components/common/RowActionsMenu";
 import { PrintHeader, PrintSignatureBlock } from "@/components/common/PrintHeader";
 import { StatusBadge } from "@/components/master-data/StatusBadge";
@@ -26,7 +27,7 @@ import {
 } from "@/types/finance";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { ColumnDef } from "@tanstack/react-table";
-import { Printer } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Landmark, Printer } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
@@ -280,19 +281,10 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
                 <DateRangeFilter value={dateRange} onChange={setDateRange} />
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
-              <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-white/[0.03]">
-                <p className="text-[11px] text-gray-400">Tổng thu</p>
-                <p className="text-sm sm:text-lg font-semibold text-success-600 truncate">{currencyFormatter.format(summary.totalReceipt)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-white/[0.03]">
-                <p className="text-[11px] text-gray-400">Tổng chi</p>
-                <p className="text-sm sm:text-lg font-semibold text-error-600 truncate">{currencyFormatter.format(summary.totalPayment)}</p>
-              </div>
-              <div className="rounded-lg border border-gray-200 bg-white p-2 dark:border-gray-800 dark:bg-white/[0.03]">
-                <p className="text-[11px] text-gray-400">Số dư</p>
-                <p className="text-sm sm:text-lg font-semibold text-gray-800 dark:text-white/90 truncate">{currencyFormatter.format(summary.balance)}</p>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <KpiCard card={{ label: "Tổng thu", value: summary.totalReceipt, icon: ArrowDownCircle, highlight: "success" }} />
+              <KpiCard card={{ label: "Tổng chi", value: summary.totalPayment, icon: ArrowUpCircle, highlight: "error" }} />
+              <KpiCard card={{ label: "Số dư", value: summary.balance, icon: Landmark, highlight: summary.balance < 0 ? "error" : "success" }} />
             </div>
           </div>
         );

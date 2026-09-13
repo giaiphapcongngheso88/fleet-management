@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 
 export function LoadingUI({
     message = ELoadingMessages.LOADING_DATA,
-    popupClass = "z-110",
+    popupClass = "z-[200]",
 }: {
     message?: string;
     popupClass?: string;
@@ -14,7 +14,7 @@ export function LoadingUI({
     return (
         <div
             className={cn(
-                "fixed inset-0 flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
+                "fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
                 popupClass,
             )}
         >
@@ -34,8 +34,8 @@ const useLoading = () => {
         container.id = id;
         container.role = "status";
         container.className = cn(
-            "fixed inset-0 flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
-            popupClass || "z-110",
+            "fixed inset-0 z-[200] flex flex-col items-center justify-center gap-3 !pointer-events-auto bg-gray-900/50",
+            popupClass || "z-[200]",
         );
         container.innerHTML = `
       <div class="h-12 w-12 rounded-full border-4 border-white/30 border-t-white animate-spin"></div>

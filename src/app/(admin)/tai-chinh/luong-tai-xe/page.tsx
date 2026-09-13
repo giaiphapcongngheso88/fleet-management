@@ -12,7 +12,7 @@ import { computePayrollPeriodTotals, payrollPeriodService } from "@/services/pay
 import { PayrollPeriod } from "@/types/payroll";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
-import { Edit } from "lucide-react";
+import { Edit, Eye, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -99,7 +99,7 @@ export default function PayrollPeriodListPage() {
             actions.push({
               key: "detail",
               label: can("payroll", "UPDATE") ? "Sửa" : "Xem chi tiết",
-              icon: <Edit className="h-4 w-4 text-gray-500" />,
+              icon: can("payroll", "UPDATE") ? <Edit className="h-4 w-4 text-gray-500" /> : <Eye className="h-4 w-4 text-gray-500" />,
               onSelect: () => goToDetail(row.original),
             });
           }
@@ -142,6 +142,7 @@ export default function PayrollPeriodListPage() {
               }}
               className="flex items-center gap-2"
             >
+              <Plus className="h-4 w-4" />
               Tạo kỳ lương mới
             </Button>
           )}

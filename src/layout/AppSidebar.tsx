@@ -1,4 +1,6 @@
 "use client";
+import { ELoadingMessages } from "@/app/lib/enums";
+import useLoading from "@/components/loading";
 import { usePermission } from "@/context/PermissionContext";
 import Image from "next/image";
 import Link from "next/link";
@@ -106,6 +108,8 @@ const AppSidebar: React.FC = () => {
   const { isExpanded, isMobileOpen, isHovered, setIsHovered } = useSidebar();
   const pathname = usePathname();
   const { can } = usePermission();
+  const { showLoading, hideLoading } = useLoading();
+  const pendingNavLoadingIds = useRef<string[]>([]);
 
   const hasViewPermission = useCallback((resource: string | undefined) => (resource ? can(resource, "VIEW") : true), [can]);
 
@@ -128,6 +132,18 @@ const AppSidebar: React.FC = () => {
   const subMenuRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const isActive = useCallback((path: string) => path === pathname, [pathname]);
+
+  const onNavigate = (path: string) => {
+    if (path !== pathname) {
+      pendingNavLoadingIds.current.push(showLoading(ELoadingMessages.LOADING_DATA));
+    }
+  };
+
+  useEffect(() => {
+    if (pendingNavLoadingIds.current.length === 0) return;
+    pendingNavLoadingIds.current.forEach(hideLoading);
+    pendingNavLoadingIds.current = [];
+  }, [pathname, hideLoading]);
 
   const handleSubmenuToggle = (navKey: string) => {
     setOpenSubmenu((prev) => (prev === navKey ? null : navKey));
@@ -159,6 +175,7 @@ const AppSidebar: React.FC = () => {
               nav.path && (
                 <Link
                   href={nav.path}
+                  onClick={() => onNavigate(nav.path as string)}
                   className={`menu-item group ${isActive(nav.path) ? "menu-item-active" : "menu-item-inactive"}`}
                 >
                   <span className={`${isActive(nav.path) ? "menu-item-icon-active" : "menu-item-icon-inactive"}`}>{nav.icon}</span>
@@ -180,6 +197,7 @@ const AppSidebar: React.FC = () => {
                     <li key={subItem.name}>
                       <Link
                         href={subItem.path}
+                        onClick={() => onNavigate(subItem.path)}
                         className={`menu-dropdown-item ${isActive(subItem.path) ? "menu-dropdown-item-active" : "menu-dropdown-item-inactive"}`}
                       >
                         {subItem.name}

@@ -18,7 +18,7 @@ import { Trip } from "@/types/trip";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ColumnDef } from "@tanstack/react-table";
 import ExcelJS from "exceljs";
-import { Download, Edit } from "lucide-react";
+import { Download, Edit, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -243,6 +243,7 @@ export default function TripListPage() {
               }}
               className="flex items-center gap-2"
             >
+              <Plus className="h-4 w-4" />
               Thêm chuyến
             </Button>
           )}

@@ -9,6 +9,7 @@ import { useCurrentUser } from "@/context/CurrentUserContext";
 import { useFeedbackDialog } from "@/app/lib/feedback-dialog-provider";
 import useLoading from "@/components/loading";
 import { ELoadingMessages } from "@/app/lib/enums";
+import { Check, ClipboardCheck, X } from "lucide-react";
 import { debtReconciliationService, getDebtReconciliations } from "@/services/finance";
 import { DebtReconciliation, DebtReconciliationObjectType } from "@/types/debt-reconciliation";
 import { getErrorMessage } from "@/utils/errorHandler";
@@ -80,7 +81,8 @@ export function DebtReconciliationDialog({ objectType, objectId, partnerName, le
 
   return (
     <>
-      <Button type="button" variant="outline" onClick={() => setOpen(true)}>
+      <Button type="button" variant="outline" onClick={() => setOpen(true)} className="flex items-center gap-1.5">
+        <ClipboardCheck className="h-4 w-4" />
         Đối chiếu công nợ
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
@@ -132,8 +134,14 @@ export function DebtReconciliationDialog({ objectType, objectId, partnerName, le
             </div>
           )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Hủy</Button>
-            <Button type="button" onClick={() => void onSubmit()}>Lưu đối chiếu</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} className="flex items-center gap-1.5">
+              <X className="h-4 w-4" />
+              Hủy
+            </Button>
+            <Button type="button" onClick={() => void onSubmit()} className="flex items-center gap-1.5">
+              <Check className="h-4 w-4" />
+              Lưu đối chiếu
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

@@ -10,6 +10,7 @@ import { useCurrentUser } from "@/context/CurrentUserContext";
 import { payrollPeriodService } from "@/services/payroll";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { endOfMonth, format } from "date-fns";
+import { ArrowLeft, Check } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -79,9 +80,11 @@ export default function NewPayrollPeriodPage() {
       </div>
       <div className="flex gap-2 mt-6">
         <Button type="button" variant="outline" onClick={() => router.push("/tai-chinh/luong-tai-xe")}>
+          <ArrowLeft className="h-4 w-4" />
           Hủy bỏ
         </Button>
         <Button type="button" variant="default" onClick={onCreate}>
+          <Check className="h-4 w-4" />
           Tạo kỳ lương
         </Button>
       </div>

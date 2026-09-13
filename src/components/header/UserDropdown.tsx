@@ -34,9 +34,9 @@ export default function UserDropdown() {
         onClick={toggleDropdown}
         className="flex items-center text-gray-700 dark:text-gray-400 dropdown-toggle"
       >
-        <span className="mr-2 overflow-hidden rounded-full h-8 w-8 bg-brand-100 flex items-center justify-center text-brand-600 font-semibold">
+        <span className="mr-2 overflow-hidden rounded-full h-9 w-9 bg-brand-100 flex items-center justify-center text-brand-600 font-semibold">
           {user?.avatarUrl ? (
-            <Image width={32} height={32} className="h-8 w-8 object-cover" src={user.avatarUrl} alt="User" />
+            <Image width={36} height={36} className="h-9 w-9 object-cover" src={user.avatarUrl} alt="User" />
           ) : (
             <span>{(user?.fullName ?? "?").charAt(0).toUpperCase()}</span>
           )}

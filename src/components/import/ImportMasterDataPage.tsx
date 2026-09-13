@@ -14,7 +14,7 @@ import { importMasterData, ImportResult } from "@/services/masterDataImport";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { CANH_BAO } from "@/utils/enums";
 import { useState } from "react";
-import { Upload } from "lucide-react";
+import { CheckCircle2, Upload } from "lucide-react";
 
 const ENTITY_LABELS: { key: keyof ParseResult; label: string }[] = [
   { key: "customers", label: "Khách hàng" },
@@ -204,7 +204,10 @@ export default function ImportMasterDataPage() {
           )}
 
           <div className="mt-4 flex justify-end">
-            <Button onClick={onImport}>Import vào hệ thống</Button>
+            <Button onClick={onImport} className="flex items-center gap-2">
+              <CheckCircle2 className="h-4 w-4" />
+              Import vào hệ thống
+            </Button>
           </div>
         </div>
       )}

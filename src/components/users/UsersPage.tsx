@@ -15,7 +15,7 @@ import { AppUser } from "@/types/user";
 import { getErrorMessage } from "@/utils/errorHandler";
 import { ROLE_LABEL } from "@/utils/permissions";
 import { ColumnDef } from "@tanstack/react-table";
-import { Ban, CheckCircle2, Edit, Eye, KeyRound } from "lucide-react";
+import { Ban, CheckCircle2, Edit, Eye, KeyRound, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import CreateUserModal from "./CreateUserModal";
 import EditUserModal from "./EditUserModal";
@@ -195,7 +195,8 @@ export default function UsersPage() {
       </div>
       <div className="border-t p-2 flex justify-end shrink-0">
         {can("user", "CREATE") && (
-          <Button variant="default" onClick={createModal.openModal}>
+          <Button variant="default" onClick={createModal.openModal} className="flex items-center gap-2">
+            <Plus className="h-4 w-4" />
             Thêm
           </Button>
         )}

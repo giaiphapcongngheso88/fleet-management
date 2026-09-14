@@ -28,6 +28,7 @@ const schema = z.object({
   bankAccountNo: z.string().optional(),
   bankName: z.string().optional(),
   directorName: z.string().optional(),
+  vatRatePercent: z.number().min(0, "Tỉ lệ VAT không được âm").max(100, "Tỉ lệ VAT không được quá 100%"),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -125,6 +126,7 @@ export default function CompanyInfoPage() {
           bankAccountNo: info.bankAccountNo ?? "",
           bankName: info.bankName ?? "",
           directorName: info.directorName ?? "",
+          vatRatePercent: info.vatRatePercent ?? DEFAULT_COMPANY_INFO.vatRatePercent ?? 0,
         });
         setLogoDataUrl(info.logoDataUrl);
         setSealDataUrl(info.sealDataUrl);
@@ -172,7 +174,10 @@ export default function CompanyInfoPage() {
           <TextFormField control={form.control} name="bankAccountNo" label="Số tài khoản ngân hàng" />
           <TextFormField control={form.control} name="bankName" label="Ngân hàng (có thể ghi cả chi nhánh)" />
         </div>
-        <TextFormField control={form.control} name="directorName" label="Tên giám đốc (in dưới con dấu/chữ ký)" />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <TextFormField control={form.control} name="directorName" label="Tên giám đốc (in dưới con dấu/chữ ký)" />
+          <TextFormField control={form.control} name="vatRatePercent" type="number" label="Tỉ lệ VAT (%) — áp dụng cho công nợ khách hàng" required />
+        </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-2">
           <ImageUploadField label="Logo công ty" hint="Hiện góc trên trái letterhead." value={logoDataUrl} onChange={setLogoDataUrl} />

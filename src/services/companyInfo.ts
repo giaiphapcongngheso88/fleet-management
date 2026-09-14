@@ -15,6 +15,10 @@ export interface CompanyInfo {
   bankName?: string;
   /** Tên giám đốc — in đỏ đậm dưới con dấu/chữ ký ở khối "XÁC NHẬN CỦA CÔNG TY", như file gốc. */
   directorName?: string;
+  /** Tỉ lệ VAT tính trên công nợ khách hàng (đơn vị %, vd 8 = 8%) — đúng khối "Tổng tiền/VAT/Tiền sau
+   * VAT" trong sheet "Công Nợ" file gốc. Chỉ áp dụng cho công nợ KHÁCH HÀNG (doanh thu đầu ra), không
+   * áp dụng cho công nợ đơn vị vận tải — file gốc cũng chỉ có khối này ở phía khách hàng. */
+  vatRatePercent?: number;
   /** Data URL (data:image/...;base64,...) — undefined = dùng ảnh mặc định trong public/branding/. */
   logoDataUrl?: string;
   sealDataUrl?: string;
@@ -31,6 +35,7 @@ export const DEFAULT_COMPANY_INFO: CompanyInfo = {
   bankAccountNo: "6697796",
   bankName: "ACB - PGD Bình Tân",
   directorName: "NGUYỄN ÚT VÀNG",
+  vatRatePercent: 8,
 };
 
 /**
@@ -51,6 +56,7 @@ export async function getCompanyInfo(): Promise<CompanyInfo> {
     bankAccountNo: data.bankAccountNo || DEFAULT_COMPANY_INFO.bankAccountNo,
     bankName: data.bankName || DEFAULT_COMPANY_INFO.bankName,
     directorName: data.directorName || DEFAULT_COMPANY_INFO.directorName,
+    vatRatePercent: data.vatRatePercent ?? DEFAULT_COMPANY_INFO.vatRatePercent,
     logoDataUrl: data.logoDataUrl || undefined,
     sealDataUrl: data.sealDataUrl || undefined,
     signatureDataUrl: data.signatureDataUrl || undefined,

@@ -13,6 +13,7 @@ import {
   styleTableHeaderRow,
 } from "@/lib/excel/styledWorkbook";
 import { LedgerResult } from "@/services/finance";
+import { getCompanyInfo } from "@/services/companyInfo";
 
 const currencyFormatter = new Intl.NumberFormat("vi-VN");
 
@@ -131,6 +132,9 @@ function writeFullAddressRow(sheet: ExcelJS.Worksheet, row: number, totalCols: n
 export async function exportCustomerLedgerToExcel(params: ExportCustomerLedgerParams) {
   const { asOfDate, vehiclePlate, locationName, productName, onlyPartnerId } = params;
   const items = onlyPartnerId ? params.items.filter((i) => i.partnerId === onlyPartnerId) : params.items;
+  // VAT chỉ áp dụng cho công nợ KHÁCH HÀNG (doanh thu đầu ra) — đúng khối "Tổng tiền/VAT/Tiền sau VAT"
+  // trong sheet "Công Nợ" file gốc, không áp dụng cho công nợ đơn vị vận tải.
+  const vatRate = (await getCompanyInfo()).vatRatePercent ?? 0;
 
   const TOTAL_COLS = 14;
   const workbook = new ExcelJS.Workbook();
@@ -198,6 +202,13 @@ export async function exportCustomerLedgerToExcel(params: ExportCustomerLedgerPa
     writeLabelValuePairs(sheet, row, TOTAL_COLS, [
       { label: "Thanh toán chung:", value: item.ledger.unlinkedPayments, isCurrency: true },
       { label: "Còn lại:", value: item.ledger.balance, isCurrency: true, isHighlightValue: true },
+    ]);
+    row++;
+
+    const vatAmount = item.ledger.totalRevenue * (vatRate / 100);
+    writeLabelValuePairs(sheet, row, TOTAL_COLS, [
+      { label: `VAT (${vatRate}%):`, value: vatAmount, isCurrency: true },
+      { label: "Tổng tiền sau VAT:", value: item.ledger.totalRevenue + vatAmount, isCurrency: true },
     ]);
     row += 2;
 
@@ -318,6 +329,13 @@ export async function exportCustomerLedgerToExcel(params: ExportCustomerLedgerPa
       cell.alignment = { horizontal: "right", vertical: "middle" };
     }
     applyTableBorders(sheet, row, TOTAL_COLS);
+    row++;
+
+    const grandVat = grandRevenue * (vatRate / 100);
+    writeLabelValuePairs(sheet, row, TOTAL_COLS, [
+      { label: `VAT (${vatRate}%):`, value: grandVat, isCurrency: true },
+      { label: "Tổng tiền sau VAT:", value: grandRevenue + grandVat, isCurrency: true },
+    ]);
     row += 2;
   }
 

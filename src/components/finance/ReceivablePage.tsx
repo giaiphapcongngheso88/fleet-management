@@ -85,6 +85,12 @@ export default function ReceivablePage() {
 
   const canPay = can("receivable", "UPDATE");
 
+  // VAT chỉ áp dụng cho công nợ khách hàng (doanh thu đầu ra) — đúng khối "Tổng tiền/VAT/Tiền sau VAT"
+  // trong sheet "Công Nợ" file gốc; tỉ lệ VAT admin cấu hình ở trang Thông tin công ty.
+  const vatRate = company.vatRatePercent ?? 0;
+  const vatAmount = (ledger?.totalRevenue ?? 0) * (vatRate / 100);
+  const totalWithVat = (ledger?.totalRevenue ?? 0) + vatAmount;
+
   const onExportExcel = async () => {
     if (!ledger || !customerId) return;
     const currentCustomer = customers.find((c) => c.id === customerId);
@@ -371,6 +377,28 @@ export default function ReceivablePage() {
               </tr>
             </tfoot>
           </table>
+          <table className="w-full text-sm border-collapse mt-2">
+            <tbody>
+              <tr>
+                <td colSpan={6} className="text-right py-1 px-2 font-semibold">
+                  Tổng tiền:
+                </td>
+                <td className="text-right py-1 px-2 font-semibold">{currencyFormatter.format(ledger.totalRevenue)}</td>
+              </tr>
+              <tr>
+                <td colSpan={6} className="text-right py-1 px-2 font-semibold">
+                  VAT ({vatRate}%):
+                </td>
+                <td className="text-right py-1 px-2 font-semibold">{currencyFormatter.format(vatAmount)}</td>
+              </tr>
+              <tr>
+                <td colSpan={6} className="text-right py-1 px-2 font-semibold">
+                  Tổng tiền sau VAT:
+                </td>
+                <td className="text-right py-1 px-2 font-semibold">{currencyFormatter.format(totalWithVat)}</td>
+              </tr>
+            </tbody>
+          </table>
           <PrintSignatureBlock partyLabel="Xác nhận của khách hàng" company={company} />
         </div>
       )}
@@ -439,6 +467,11 @@ export default function ReceivablePage() {
             <KpiCard card={{ label: "Tổng doanh thu (đã hoàn thành)", value: ledger.totalRevenue, icon: TrendingUp }} />
             <KpiCard card={{ label: "Đã thu", value: ledger.totalPaid, icon: HandCoins, highlight: "success" }} />
             <KpiCard card={{ label: "Còn lại", value: ledger.balance, icon: Receipt, highlight: ledger.balance > 0 ? "error" : "success" }} />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <KpiCard card={{ label: "Tổng tiền (trước VAT)", value: ledger.totalRevenue, icon: TrendingUp }} />
+            <KpiCard card={{ label: `VAT (${vatRate}%)`, value: vatAmount, icon: Receipt }} />
+            <KpiCard card={{ label: "Tổng tiền sau VAT", value: totalWithVat, icon: HandCoins, highlight: "success" }} />
           </div>
 
           <div className="flex items-center justify-between">

@@ -88,12 +88,6 @@ export async function exportVehicleStatementToExcel(vehicleLabel: string, rows: 
     styleDataRow(sheet, row, TOTAL_COLS);
     for (const c of [4, 5, 6, 7, 8, 9]) sheet.getCell(row, c).numFmt = EXCEL_NUMBER_FORMAT;
     row++;
-
-    totalVendorCost += trip.vendorCost || 0;
-    totalSalary += trip.driverTripSalary || 0;
-    totalFuel += trip.fuelActualAmount || 0;
-    totalOther += otherCost;
-    totalRevenue += trip.revenue || 0;
   }
 
   sheet.getCell(row, 1).value = `Tổng cộng (${rows.length} chuyến)`;

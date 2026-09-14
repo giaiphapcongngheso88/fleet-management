@@ -218,6 +218,7 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
         </div>
       )}
 
+    <div className="print:hidden flex flex-col flex-1 min-h-0 overflow-hidden">
     <EntityListPage<FinanceTransaction, FormValues>
       resourceKey="finance"
       entityLabel="Phiếu thu / chi"
@@ -331,6 +332,7 @@ export default function FinanceTransactionPage({ title }: { title?: string }) {
         );
       }}
     />
+    </div>
     </>
   );
 }
